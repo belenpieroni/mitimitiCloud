@@ -273,6 +273,8 @@ export default function AppNavigator() {
         importance: Notifications.AndroidImportance.MAX,
         vibrationPattern: [0, 250, 250, 250],
         lightColor: '#4f46e5',
+      }).catch(() => {
+        // En Expo Go Android el módulo de canales no está disponible nativamente
       });
     }
 
