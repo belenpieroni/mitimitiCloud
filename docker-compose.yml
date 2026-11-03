@@ -1,6 +1,6 @@
 services:
   db:
-    image: postgres:16-alpine
+    image: postgres:16
     environment:
       POSTGRES_DB: ${DB_NAME:-mitimiti}
       POSTGRES_USER: ${DB_USER:-mitimiti}
@@ -52,6 +52,7 @@ services:
     environment:
       EXPO_PUBLIC_API_URL: ${EXPO_PUBLIC_API_URL:-http://localhost:3000/api}
       REACT_NATIVE_PACKAGER_HOSTNAME: ${REACT_NATIVE_PACKAGER_HOSTNAME:-}
+      EXPO_TUNNEL: ${EXPO_TUNNEL:-0}
       EXPO_NO_TELEMETRY: "1"
     ports:
       - "8081:8081"

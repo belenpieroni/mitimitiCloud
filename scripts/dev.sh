@@ -11,26 +11,48 @@ if [ ! -f .env ] && [ -f .env.example ]; then
   echo "Se creo .env a partir de .env.example"
 fi
 
-if ! command -v docker >/dev/null 2>&1; then
-  echo "Error: Docker no esta instalado o no esta en PATH."
-  exit 1
+DOCKER_BIN="docker"
+if command -v docker.exe >/dev/null 2>&1; then
+  if docker.exe info >/dev/null 2>&1; then
+    DOCKER_BIN="docker.exe"
+  fi
 fi
 
-if ! docker info >/dev/null 2>&1; then
+if ! $DOCKER_BIN info >/dev/null 2>&1; then
   echo "Error: Docker daemon no disponible."
   echo "Abri Docker Desktop y volve a ejecutar: bash scripts/dev.sh"
   exit 1
 fi
 
 detect_host_ip() {
-  if command -v ipconfig.exe >/dev/null; then
-    ipconfig.exe | awk '/IPv4 Address|Direcci.n IPv4/ {print $NF}' | tr -d '\r' | tail -n 1
-  else
-    ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo "127.0.0.1"
-  fi
+  # 1. Try detect-ip.js
+  for node_cmd in node node.exe "/c/Program Files/nodejs/node.exe"; do
+    if command -v "$node_cmd" >/dev/null 2>&1 || [ -x "$node_cmd" ]; then
+      _ip=$("$node_cmd" "$ROOT_DIR/scripts/detect-ip.js" 2>/dev/null | tr -d '\r\n')
+      if [ -n "$_ip" ] && [ "$_ip" != "127.0.0.1" ]; then
+        echo "$_ip"
+        return
+      fi
+    fi
+  done
+
+  # 2. Try PowerShell
+  for ps_cmd in powershell.exe "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"; do
+    if command -v "$ps_cmd" >/dev/null 2>&1 || [ -x "$ps_cmd" ]; then
+      _ip=$("$ps_cmd" -NoProfile -Command "(Get-NetIPAddress -AddressFamily IPv4 -InterfaceIndex (Get-NetRoute -DestinationPrefix '0.0.0.0/0' | Sort-Object RouteMetric | Select-Object -First 1).InterfaceIndex).IPAddress" 2>/dev/null | tr -d '\r\n')
+      if [ -n "$_ip" ]; then
+        echo "$_ip"
+        return
+      fi
+    fi
+  done
+
+  # 3. Fallback
+  ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}' || echo "127.0.0.1"
 }
 
 HOST_IP="${EXPO_HOST_IP:-$(detect_host_ip)}"
+HOST_IP="${HOST_IP:-127.0.0.1}"
 export EXPO_PUBLIC_API_URL="http://${HOST_IP}:3000/api"
 export REACT_NATIVE_PACKAGER_HOSTNAME="${HOST_IP}"
 
@@ -55,7 +77,7 @@ else
   echo "EXPO_PUBLIC_EAS_PROJECT_ID no configurado (push remoto se omite en Expo Go)"
 fi
 
-docker compose up --build "$@"
+$DOCKER_BIN compose up --build "$@"
 
 # Tras levantar el stack, migrá los datos del db.json si es la primera vez:
 # docker compose exec backend npm run seed

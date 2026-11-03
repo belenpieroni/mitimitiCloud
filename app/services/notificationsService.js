@@ -7,7 +7,11 @@ let Notifications = null;
 let notificationHandlerInitialized = false;
 
 export function isExpoGoAndroid() {
-  return false;
+  return (
+    Platform.OS === 'android' &&
+    (Constants?.appOwnership === 'expo' ||
+      Constants?.executionEnvironment === 'storeClient')
+  );
 }
 
 export async function getNotificationsModule() {
