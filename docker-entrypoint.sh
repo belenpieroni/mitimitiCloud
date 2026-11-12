@@ -7,4 +7,9 @@ if [ ! -d node_modules ] || [ -z "$(ls -A node_modules 2>/dev/null)" ] || ! npm 
   npm install --legacy-peer-deps
 fi
 
-exec npx expo start --lan
+START_ARG="--lan"
+if [ "$EXPO_TUNNEL" = "1" ] || [ "$EXPO_TUNNEL" = "true" ]; then
+  START_ARG="--tunnel"
+fi
+
+exec npx expo start $START_ARG
