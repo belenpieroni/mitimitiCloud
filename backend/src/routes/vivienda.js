@@ -12,7 +12,9 @@ router.patch('/actual', ctrl.editarMiVivienda);
 router.delete('/actual', ctrl.eliminarMiVivienda);
 router.get('/invitacion', ctrl.generarObtenerInvitacion);
 router.post('/invitacion', ctrl.generarObtenerInvitacion);
+router.get('/join/:token/preview', ctrl.previewInvitacion);
 router.post('/join/:token', ctrl.unirseViaToken);
+router.post('/salir', ctrl.salirDeMiVivienda);
 
 router.get('/gastos', ctrl.listarGastos);
 router.post('/gastos', ctrl.crearGasto);

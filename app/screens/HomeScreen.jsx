@@ -22,7 +22,12 @@ function getSaludo() {
 }
 
 function formatPesos(monto) {
-  return '$' + Math.abs(monto).toLocaleString('es-AR');
+  const valor = Math.abs(Number(monto) || 0);
+  const tieneDecimales = valor % 1 !== 0;
+  return '$' + valor.toLocaleString('es-AR', {
+    minimumFractionDigits: tieneDecimales ? 2 : 0,
+    maximumFractionDigits: 2,
+  });
 }
 
 async function fetchConsolidadoBalance(nombre) {
@@ -291,7 +296,7 @@ const styles = StyleSheet.create({
   },
   avatarTexto: { color: 'white', fontWeight: 'bold', fontSize: 14 },
   cardBalance: { backgroundColor: colors.primary, borderRadius: 20, padding: 20, marginBottom: 24 },
-  balanceLabel: { color: 'rgba(255,255,255,0.7)', fontSize: 13, marginBottom: 8 },
+  balanceLabel: { color: 'rgba(255,255,255,0.7)', fontSize: 13,  fontWeight: '700', marginBottom: 8 },
   balanceTotal: { color: 'white', fontSize: 36, fontWeight: 'bold', marginBottom: 16 },
   balanceFila: { flexDirection: 'row', gap: 12 },
   balanceItem: {

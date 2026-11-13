@@ -1,5 +1,5 @@
 import { useMemo, useState, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert  } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
@@ -78,6 +78,25 @@ export default function PerfilScreen() {
     }
   };
 
+  const handleLogout = () => {
+    Alert.alert(
+      'Cerrar sesión',
+      `¿Estás seguro de que querés cerrar sesión de la cuenta ${email}?`,
+      [
+        {
+          text: 'Cancelar',
+          style: 'cancel',
+        },
+        {
+          text: 'Cerrar sesión',
+          style: 'destructive',
+          onPress: () => logout(), // Si confirma, ejecuta el cierre y vuelve a Login
+        },
+      ],
+      { cancelable: true }
+    );
+  };
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
       <View style={styles.headerRow}>
@@ -119,7 +138,7 @@ export default function PerfilScreen() {
         ))}
       </View>
 
-      <TouchableOpacity style={styles.logoutBtn} onPress={logout}>
+      <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
         <Ionicons name="log-out-outline" size={20} color="#D64B3B" />
         <Text style={styles.logoutText}>Cerrar sesión</Text>
       </TouchableOpacity>

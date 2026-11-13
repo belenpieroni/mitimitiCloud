@@ -31,8 +31,9 @@ const getIcono = (tipo) => (tipo === 'Vivienda' ? "home-outline" : "balloon-outl
 
 const formatPesos = (monto) => {
   const valor = Number(monto) || 0;
+  const tieneDecimales = valor % 1 !== 0; // Verifica si tiene centavos
   return valor.toLocaleString('es-AR', {
-    minimumFractionDigits: 2,
+    minimumFractionDigits: tieneDecimales ? 2 : 0, // Si es entero muestra 0 decimales, si tiene centavos muestra 2
     maximumFractionDigits: 2,
   });
 };
@@ -327,7 +328,7 @@ export default function DeudasScreen({ navigation }) {
         >
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
             <View style={{ flex: 1, marginRight: 12 }}>
-              <Text style={styles.balanceLabel}>TOTAL A PAGAR</Text>
+              <Text style={styles.balanceLabel}>Total a pagar</Text>
               <Text style={styles.balanceAmount}>${formatPesos(totalAPagar)}</Text>
               <Text style={styles.balanceInfo}>
                 {totalConceptos} {totalConceptos === 1 ? 'deuda pendiente' : 'deudas pendientes'} - {pendientes.length} {pendientes.length === 1 ? 'acreedor' : 'acreedores'}
@@ -692,7 +693,7 @@ const styles = StyleSheet.create({
   title: {  fontSize: 28, fontWeight: 'bold', color: colors.textPrimary},
   subtitle: { fontSize: 14, color: '#666', marginTop: 4 },
   balanceCard: { backgroundColor: colors.primary, borderRadius: 24, padding: 25, marginBottom: 30 },
-  balanceLabel: { color: 'rgba(255,255,255,0.7)', fontSize: 12, fontWeight: '600' },
+  balanceLabel: { color: 'rgba(255,255,255,0.85)', fontSize: 13, fontWeight: '700',  marginBottom: 6,},
   balanceAmount: { color: 'white', fontSize: 36, fontWeight: 'bold', marginVertical: 5 },
   balanceInfo: { color: 'rgba(255,255,255,0.8)', fontSize: 13 },
   sectionHeader: { fontSize: 14, fontWeight: 'bold', color: '#666', marginBottom: 15 },

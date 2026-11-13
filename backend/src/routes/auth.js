@@ -5,6 +5,7 @@ const { requireAuth } = require('../middleware/authMiddleware');
 
 router.post('/register', authController.register);
 router.post('/login', authController.login);
+router.post('/reset-password', authController.resetPassword);
 router.post('/device-token', requireAuth, authController.registrarDeviceToken);
 router.get('/notification-preferences', requireAuth, authController.obtenerPreferenciasNotificaciones);
 router.put('/notification-preferences', requireAuth, authController.actualizarPreferenciasNotificaciones);

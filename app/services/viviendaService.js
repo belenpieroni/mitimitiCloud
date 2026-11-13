@@ -17,8 +17,12 @@ export const eliminarAcuerdoReparto = async (id) => await api.delete(`/vivienda/
 
 export const getMiVivienda = async () => await api.get('/vivienda/actual');
 export const crearMiVivienda = async (payload = {}) => await api.post('/vivienda/crear', payload);
+export const salirDeMiVivienda = async () => await api.post('/vivienda/salir');
 export const obtenerInvitacionVivienda = async () => await api.get('/vivienda/invitacion');
-export const unirseViviendaViaToken = async (token) => await api.post(`/vivienda/join/${token}`);
+export const unirseViviendaViaToken = async (token, force = false) =>
+  await api.post(`/vivienda/join/${token}${force ? '?force=true' : ''}`);
+export const previewInvitacionVivienda = async (token) =>
+  await api.get(`/vivienda/join/${token}/preview`);
 
 export const marcarPagadoVivienda = async (tipo, id) => await api.patch(`/vivienda/${tipo}/${id}/pagar`);
 export const revertirPagoVivienda = async (tipo, id) => await api.patch(`/vivienda/${tipo}/${id}/revertir`);
