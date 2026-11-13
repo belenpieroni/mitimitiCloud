@@ -113,25 +113,41 @@ async function getConsolidado(req, res, next) {
 
     const serviciosAPagar = [];
 
-    const { rows: [userRow] } = await pool.query(
-      'SELECT id FROM usuarios WHERE LOWER(name) = LOWER($1)',
-      [usuario]
-    );
+    let targetUserId = req.user?.id || null;
+    let targetViviendaId = null;
 
-    if (userRow) {
+    if (targetUserId) {
       const { rows: [vm] } = await pool.query(
         'SELECT vivienda_id FROM vivienda_miembros WHERE usuario_id = $1 LIMIT 1',
-        [userRow.id]
+        [targetUserId]
       );
+      if (vm) targetViviendaId = vm.vivienda_id;
+    }
 
-      if (vm) {
-        const { rows: acuerdosPart } = await pool.query(
-          `SELECT ap.acuerdo_id, ap.nombre, ap.porcentaje
-           FROM acuerdo_participantes ap
-           JOIN vivienda_acuerdos va ON va.id = ap.acuerdo_id
-           WHERE va.vivienda_id = $1`,
-          [vm.vivienda_id]
-        );
+    if (!targetViviendaId) {
+      // Buscar usuario por nombre, priorizando aquellos que pertenezcan a una vivienda
+      const { rows: userRows } = await pool.query(
+        `SELECT u.id, vm.vivienda_id
+         FROM usuarios u
+         LEFT JOIN vivienda_miembros vm ON vm.usuario_id = u.id
+         WHERE LOWER(u.name) = LOWER($1)
+         ORDER BY (CASE WHEN vm.vivienda_id IS NOT NULL THEN 0 ELSE 1 END), u.creado_en DESC`,
+        [usuario]
+      );
+      if (userRows.length > 0) {
+        targetUserId = targetUserId || userRows[0].id;
+        targetViviendaId = userRows[0].vivienda_id;
+      }
+    }
+
+    if (targetViviendaId) {
+      const { rows: acuerdosPart } = await pool.query(
+        `SELECT ap.acuerdo_id, ap.nombre, ap.porcentaje
+         FROM acuerdo_participantes ap
+         JOIN vivienda_acuerdos va ON va.id = ap.acuerdo_id
+         WHERE va.vivienda_id = $1`,
+        [targetViviendaId]
+      );
 
         const acuerdoMap = {};
         for (const ap of acuerdosPart) {
@@ -143,7 +159,7 @@ async function getConsolidado(req, res, next) {
 
         const { rows: gastos } = await pool.query(
           'SELECT id, nombre, pagador, monto, status, fecha_pago, participantes, acuerdo_id FROM vivienda_gastos WHERE vivienda_id = $1 AND (status = $2 OR status = $3)',
-          [vm.vivienda_id, 'PROCESADO', 'PAGADO']
+          [targetViviendaId, 'PROCESADO', 'PAGADO']
         );
 
         for (const g of gastos) {
@@ -216,7 +232,7 @@ async function getConsolidado(req, res, next) {
 
         const { rows: servicios } = await pool.query(
           'SELECT id, nombre, monto, status, is_variable, participantes, fecha_pago, acuerdo_id FROM vivienda_servicios WHERE vivienda_id = $1 AND (status = $2 OR status = $3 OR status = $4)',
-          [vm.vivienda_id, 'PENDIENTE', 'PROCESADO', 'PAGADO']
+          [targetViviendaId, 'PENDIENTE', 'PROCESADO', 'PAGADO']
         );
 
         for (const s of servicios) {
@@ -258,7 +274,6 @@ async function getConsolidado(req, res, next) {
           }
         }
       }
-    }
 
     const { rows: compensaciones } = await pool.query(
       `SELECT n.id::text, n.titulo, n.cuerpo, n.creada_en, n.payload
@@ -412,4 +427,92 @@ async function pagarMultiple(req, res, next) {
   }
 }
 
-module.exports = { getConsolidado, pagarDeuda, pagarMultiple };
+async function getActividadesRecientes(req, res, next) {
+  try {
+    const usuario = req.params.usuarioNombre
+      ? decodeURIComponent(req.params.usuarioNombre)
+      : (req.query.usuario || req.user?.name);
+
+    if (!usuario) {
+      return res.status(400).json({ ok: false, error: 'El parámetro "usuario" es requerido.' });
+    }
+
+    const query = `
+      SELECT 
+        'juntada' AS tipo, 
+        j.id::text AS id, 
+        j.nombre AS titulo,
+        'Nueva juntada creada' AS subtitulo, 
+        NULL::numeric AS monto,
+        j.creada_en AS fecha, 
+        'people-outline' AS icono, 
+        '#473472' AS color,
+        j.id::text AS "targetId"
+      FROM juntadas j
+      JOIN juntada_participantes jp ON jp.juntada_id = j.id
+      WHERE LOWER(jp.nombre) = LOWER($1)
+
+      UNION ALL
+
+      SELECT 
+        'juntada_gasto' AS tipo, 
+        jg.id::text AS id, 
+        jg.nombre AS titulo,
+        ('Gasto en ' || j.nombre || ' · Pagó ' || jg.pagador) AS subtitulo,
+        jg.monto, 
+        jg.creado_en AS fecha, 
+        'restaurant-outline' AS icono, 
+        '#f97316' AS color,
+        j.id::text AS "targetId"
+      FROM juntada_gastos jg
+      JOIN juntadas j ON j.id = jg.juntada_id
+      JOIN juntada_participantes jp ON jp.juntada_id = j.id
+      WHERE LOWER(jp.nombre) = LOWER($1)
+
+      UNION ALL
+
+      SELECT 
+        'vivienda_servicio' AS tipo, 
+        vs.id::text AS id, 
+        vs.nombre AS titulo,
+        ('Servicio de vivienda' || CASE WHEN vs.status = 'PENDIENTE' THEN ' (Esperando factura)' ELSE '' END) AS subtitulo,
+        vs.monto, 
+        vs.creado_en AS fecha, 
+        'flash-outline' AS icono, 
+        '#ec6c6a' AS color,
+        vs.id::text AS "targetId"
+      FROM vivienda_servicios vs
+      JOIN vivienda_miembros vm ON vm.vivienda_id = vs.vivienda_id
+      JOIN usuarios u ON u.id = vm.usuario_id
+      WHERE LOWER(u.name) = LOWER($1)
+
+      UNION ALL
+
+      SELECT 
+        'vivienda_gasto' AS tipo, 
+        vg.id::text AS id, 
+        vg.nombre AS titulo,
+        ('Gasto en vivienda · Pagó ' || vg.pagador) AS subtitulo,
+        vg.monto, 
+        vg.creado_en AS fecha, 
+        'cart-outline' AS icono, 
+        '#42b271' AS color,
+        vg.id::text AS "targetId"
+      FROM vivienda_gastos vg
+      JOIN vivienda_miembros vm ON vm.vivienda_id = vg.vivienda_id
+      JOIN usuarios u ON u.id = vm.usuario_id
+      WHERE LOWER(u.name) = LOWER($1)
+
+      ORDER BY fecha DESC
+      LIMIT 20
+    `;
+
+    const { rows } = await pool.query(query, [usuario]);
+    res.json({ ok: true, data: rows });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { getConsolidado, pagarDeuda, pagarMultiple, getActividadesRecientes };
+

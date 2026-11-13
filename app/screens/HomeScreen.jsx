@@ -3,11 +3,9 @@ import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
-import { listarJuntadas, obtenerBalanceGlobal, subscribeLocalJuntadas } from '../services/juntadasService';
 import { obtenerNotificaciones } from '../services/notificationsService';
 import { useAuth } from '../context/AuthContext';
-
-const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000/api';
+import api from '../services/api';
 
 const modulos = [
   { id: '1', nombre: 'Juntadas', icono: 'people-outline' },
@@ -30,19 +28,31 @@ function formatPesos(monto) {
   });
 }
 
+function getRelativeTime(fechaIso) {
+  if (!fechaIso) return '';
+  const diffMs = Date.now() - new Date(fechaIso).getTime();
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return 'Ahora';
+  if (mins < 60) return `Hace ${mins} min`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `Hace ${hours} h`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return 'Ayer';
+  return `Hace ${days} d`;
+}
+
 async function fetchConsolidadoBalance(nombre) {
   try {
-    const res = await fetch(`${API_BASE}/deudas/consolidado/${encodeURIComponent(nombre)}`);
-    const data = await res.json();
-    if (!res.ok || !data.ok) return null;
+    const data = await api.get(`/deudas/consolidado/${encodeURIComponent(nombre)}`);
+    if (!data) return null;
     
     let acreedores = [];
     let servicios = [];
-    if (Array.isArray(data.data)) {
-      acreedores = data.data;
+    if (Array.isArray(data)) {
+      acreedores = data;
     } else {
-      acreedores = data.data.acreedores || [];
-      servicios = data.data.serviciosAPagar || [];
+      acreedores = data.acreedores || [];
+      servicios = data.serviciosAPagar || [];
     }
 
     const porPagarAcreedores = acreedores.reduce((acc, a) => {
@@ -80,39 +90,34 @@ export default function HomeScreen({ navigation }) {
     .toUpperCase();
 
   const nombre = user?.name || 'Usuario';
-  const iniciales = user?.iniciales || 'US';
 
   const [balance, setBalance] = useState({
     total: 0,
     porCobrar: 0,
     porPagar: 0
   });
-  const [juntadas, setJuntadas] = useState([]);
+  const [actividades, setActividades] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [unreadCount, setUnreadCount] = useState(0);
-
-  useEffect(() => {
-    const unsubscribe = subscribeLocalJuntadas((list) => {
-      setJuntadas(list.slice(0, 5));
-    });
-    return unsubscribe;
-  }, []);
 
   const cargarDatos = useCallback(async () => {
     if (!user?.name) return;
     setCargando(true);
     try {
-      const [dataBalance, resJuntadas, resNotif] = await Promise.all([
+      const [dataBalance, resActividades, resNotif] = await Promise.all([
         fetchConsolidadoBalance(nombre),
-        listarJuntadas(nombre),
+        api.get(`/deudas/actividades/${encodeURIComponent(nombre)}`),
         token ? obtenerNotificaciones(token) : Promise.resolve([]),
       ]);
 
-      
-      const dataJuntadas = resJuntadas?.data?.data || resJuntadas?.data || resJuntadas;
-
       if (dataBalance) {
         setBalance(dataBalance);
+      }
+
+      if (Array.isArray(resActividades)) {
+        setActividades(resActividades);
+      } else {
+        setActividades([]);
       }
       
       const notifs = Array.isArray(resNotif) ? resNotif : resNotif?.data?.data || resNotif?.data || [];
@@ -120,14 +125,12 @@ export default function HomeScreen({ navigation }) {
         const unread = notifs.filter(n => !n.leida).length;
         setUnreadCount(unread);
       }
-      
-      
     } catch (err) {
       console.error("Error cargando la Home: ", err);
     } finally {
       setCargando(false);
     }
-  }, [nombre, user?.name]);
+  }, [nombre, user?.name, token]);
 
   useFocusEffect(
     useCallback(() => { 
@@ -135,10 +138,21 @@ export default function HomeScreen({ navigation }) {
     }, [cargarDatos])
   );
 
+  const handleNavegarActividad = (act) => {
+    if (act.tipo === 'juntada' || act.tipo === 'juntada_gasto') {
+      navigation.navigate('Juntadas', { 
+        screen: 'JuntadaDetalle', 
+        params: { juntadaId: act.targetId } 
+      });
+    } else if (act.tipo === 'vivienda_servicio' || act.tipo === 'vivienda_gasto') {
+      navigation.navigate('Vivienda', { 
+        screen: 'ViviendaDashboard' 
+      });
+    }
+  };
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-
-      
       <View style={styles.header}>
         <View>
           <Text style={styles.saludo}>{getSaludo()}</Text>
@@ -162,7 +176,6 @@ export default function HomeScreen({ navigation }) {
         </View>
       </View>
 
-    
       <View style={styles.cardBalance}>
         <Text style={styles.balanceLabel}>Balance total</Text>
         {cargando ? (
@@ -194,7 +207,6 @@ export default function HomeScreen({ navigation }) {
               </View>
             </View>
 
-            
             <TouchableOpacity 
               style={styles.btnVerDeudas} 
               onPress={() => navigation.navigate('Deudas')}
@@ -205,7 +217,6 @@ export default function HomeScreen({ navigation }) {
         )}
       </View>
 
-      
       <Text style={styles.seccionTitulo}>Módulos</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.modulosScroll}>
         {modulos.map((mod) => (
@@ -226,43 +237,52 @@ export default function HomeScreen({ navigation }) {
         ))}
       </ScrollView>
 
-      
       <View style={styles.seccionHeader}>
-        <Text style={styles.seccionTitulo}>Activos recientemente</Text>
-        <TouchableOpacity onPress={() => navigation.navigate('Juntadas', { screen: 'JuntadasList' })}>
-          <Text style={styles.verTodo}>Ver todo &gt;</Text>
-        </TouchableOpacity>
+        <Text style={styles.seccionTitulo}>Actividades recientes</Text>
+        {actividades.length > 4 && (
+          <TouchableOpacity onPress={() => navigation.navigate('ActividadesRecientes', { actividades })}>
+            <Text style={styles.verTodo}>Ver más &gt;</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {cargando ? (
         <ActivityIndicator color={colors.primary} style={{ marginTop: 16 }} />
-      ) : juntadas.length === 0 ? (
+      ) : actividades.length === 0 ? (
         <View style={styles.vacioCentrado}>
-          <Text style={styles.vacioTexto}>Sin juntadas todavía</Text>
+          <Text style={styles.vacioTexto}>Sin actividad reciente todavía</Text>
         </View>
       ) : (
-        juntadas.map((j) => (
-          <TouchableOpacity
-            key={j.id}
-            style={styles.juntadaCard}
-            onPress={() => navigation.navigate('Juntadas', { screen: 'JuntadaDetalle', params: { juntadaId: j.id } })}
-          >
-            <View style={styles.juntadaIcono}>
-              <Ionicons name="people-outline" size={20} color={colors.primary} />
-            </View>
-            <View style={styles.juntadaInfo}>
-              <Text style={styles.juntadaNombre}>{j.nombre}</Text>
-              <Text style={styles.juntadaSub}>
-                Juntada · {j.cantidadParticipantes} personas · {formatPesos(j.totalGastado)}
-              </Text>
-            </View>
-            <View>
-              {j.tipo === 'cobrar' && <Text style={styles.teCobrar}>Te deben {formatPesos(j.deuda)}</Text>}
-              {j.tipo === 'pagar'  && <Text style={styles.teDebes}>Debés {formatPesos(j.deuda)}</Text>}
-              {j.tipo === 'ninguna'&& <Text style={styles.sinDeuda}>Sin deudas</Text>}
-            </View>
-          </TouchableOpacity>
-        ))
+        actividades.slice(0, 4).map((act) => {
+          const tiempoRelativo = getRelativeTime(act.fecha);
+          return (
+            <TouchableOpacity
+              key={`${act.tipo}-${act.id}`}
+              style={styles.actividadCard}
+              onPress={() => handleNavegarActividad(act)}
+            >
+              <View style={[styles.actividadIcono, { backgroundColor: act.color ? `${act.color}18` : colors.secondary }]}>
+                <Ionicons name={act.icono || 'receipt-outline'} size={20} color={act.color || colors.primary} />
+              </View>
+              <View style={styles.actividadInfo}>
+                <View style={styles.actividadTopRow}>
+                  <Text style={styles.actividadNombre} numberOfLines={1}>{act.titulo}</Text>
+                  {!!tiempoRelativo && (
+                    <Text style={styles.actividadTiempo}>{tiempoRelativo}</Text>
+                  )}
+                </View>
+                <Text style={styles.actividadSub} numberOfLines={1}>
+                  {act.subtitulo}
+                </Text>
+              </View>
+              {act.monto != null && Number(act.monto) > 0 && (
+                <View style={styles.actividadMontoCol}>
+                  <Text style={styles.actividadMonto}>{formatPesos(act.monto)}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          );
+        })
       )}
     </ScrollView>
   );
@@ -270,7 +290,7 @@ export default function HomeScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  content: { padding: 20, paddingTop: 56 },
+  content: { padding: 20, paddingTop: 56, paddingBottom: 40 },
   header: {
     flexDirection: 'row', justifyContent: 'space-between',
     alignItems: 'center', marginBottom: 24,
@@ -309,27 +329,30 @@ const styles = StyleSheet.create({
     flexDirection: 'row', justifyContent: 'space-between',
     alignItems: 'center', marginBottom: 12, marginTop: 8,
   },
-  verTodo: { color: colors.textSecondary, fontSize: 13 },
+  verTodo: { color: colors.textSecondary, fontSize: 13, fontWeight: '600' },
   modulosScroll: { marginBottom: 24 },
   moduloCard: {
     backgroundColor: colors.cardBg, borderRadius: 16, padding: 16,
     marginRight: 12, alignItems: 'center', width: 110, gap: 8,
   },
   moduloNombre: { fontSize: 14, fontWeight: '600', color: colors.textPrimary },
-  juntadaCard: {
+  
+  actividadCard: {
     backgroundColor: colors.cardBg, borderRadius: 16, padding: 14,
     marginBottom: 10, flexDirection: 'row', alignItems: 'center', gap: 12,
   },
-  juntadaIcono: {
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: colors.secondary, justifyContent: 'center', alignItems: 'center',
+  actividadIcono: {
+    width: 42, height: 42, borderRadius: 21,
+    justifyContent: 'center', alignItems: 'center',
   },
-  juntadaInfo: { flex: 1 },
-  juntadaNombre: { fontSize: 14, fontWeight: '600', color: colors.textPrimary },
-  juntadaSub: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
-  teCobrar: { color: colors.greenGlobal, fontWeight: '600', fontSize: 13 },
-  teDebes:  { color: colors.redGlobal,  fontWeight: '600', fontSize: 13 },
-  sinDeuda: { color: colors.textSecondary, fontSize: 13 },
+  actividadInfo: { flex: 1 },
+  actividadTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 6 },
+  actividadNombre: { fontSize: 14, fontWeight: '600', color: colors.textPrimary, flex: 1 },
+  actividadTiempo: { fontSize: 11, color: colors.textSecondary },
+  actividadSub: { fontSize: 12, color: colors.textSecondary, marginTop: 3 },
+  actividadMontoCol: { alignItems: 'flex-end', marginLeft: 6 },
+  actividadMonto: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
+
   vacioCentrado: { alignItems: 'center', paddingVertical: 24 },
   vacioTexto: { color: colors.textSecondary, fontSize: 13 },
   btnVerDeudas: { 
@@ -344,5 +367,4 @@ const styles = StyleSheet.create({
     fontWeight: '700', 
     fontSize: 14 
   },
-  
 });

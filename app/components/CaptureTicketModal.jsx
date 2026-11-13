@@ -8,12 +8,14 @@ import {
   ActivityIndicator,
   Alert,
   Image,
-  ScrollView,
+  Dimensions,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 import { scanTicket } from '../services/ocrService';
+
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export default function CaptureTicketModal({ visible, onClose, onAmountExtracted }) {
   const [permission, requestPermission] = useCameraPermissions();
@@ -123,7 +125,7 @@ export default function CaptureTicketModal({ visible, onClose, onAmountExtracted
   }
 
   return (
-    <Modal visible={visible} animationType="slide" transparent={true}>
+    <Modal visible={visible} animationType="slide" transparent={false} statusBarTranslucent>
       {isProcessing && (
         <View style={styles.loadingOverlay}>
           <ActivityIndicator size="large" color={colors.primary} />
@@ -131,65 +133,72 @@ export default function CaptureTicketModal({ visible, onClose, onAmountExtracted
         </View>
       )}
 
-      <View style={styles.overlay}>
-        <View style={styles.modalContent}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Escanear ticket</Text>
-            <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
-              <MaterialCommunityIcons name="close" size={24} color="#333" />
-            </TouchableOpacity>
-          </View>
-
-          {!capturedPhoto ? (
-            <ScrollView style={styles.captureContent} showsVerticalScrollIndicator={false}>
-              
-              <View style={styles.cameraWrapper}>
-                <CameraView
-                  ref={cameraRef}
-                  style={styles.camera}
-                  facing="back"
-                />
-                <View style={styles.cameraInstructions}>
-                  <MaterialCommunityIcons name="camera" size={48} color="rgba(255,255,255,0.6)" />
-                  <Text style={styles.instructionText}>
-                    Apuntá la cámara al ticket y mantenga firme
-                  </Text>
-                </View>
-              </View>
-
-              
-              <TouchableOpacity
-                style={styles.captureButton}
-                onPress={takePicture}
-              >
-                <Text style={styles.captureButtonText}>Capturar</Text>
-              </TouchableOpacity>
-            </ScrollView>
-          ) : (
-            <ScrollView style={styles.previewContent} showsVerticalScrollIndicator={false}>
-              <Image
-                source={{ uri: capturedPhoto }}
-                style={styles.previewImage}
-              />
-
-              <View style={styles.previewActions}>
-                <TouchableOpacity
-                  style={styles.btnRetry}
-                  onPress={() => setCapturedPhoto(null)}
-                >
-                  <Text style={styles.btnRetryText}>Nueva foto</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.btnProcessing}
-                  onPress={processTicket}
-                >
-                  <Text style={styles.btnProcessingText}>Escanear</Text>
-                </TouchableOpacity>
-              </View>
-            </ScrollView>
-          )}
+      <View style={styles.fullScreen}>
+        {/* Header */}
+        <View style={styles.modalHeader}>
+          <Text style={styles.modalTitle}>Escanear ticket</Text>
+          <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
+            <Ionicons name="close" size={26} color="#333" />
+          </TouchableOpacity>
         </View>
+
+        {!capturedPhoto ? (
+          <View style={styles.cameraContainer}>
+            {/* Visor de cámara a pantalla completa */}
+            <CameraView
+              ref={cameraRef}
+              style={styles.camera}
+              facing="back"
+            />
+
+            {/* Guía de encuadre (sólo un marco sutil, no tapa la cámara) */}
+            <View style={styles.frameOverlay} pointerEvents="none">
+              <View style={styles.frameCornerTL} />
+              <View style={styles.frameCornerTR} />
+              <View style={styles.frameCornerBL} />
+              <View style={styles.frameCornerBR} />
+            </View>
+
+            {/* Instrucción pequeña al fondo del visor */}
+            <View style={styles.instructionBanner} pointerEvents="none">
+              <Text style={styles.instructionText}>
+                📄 Apuntá al ticket y presioná Capturar
+              </Text>
+            </View>
+
+            {/* Botón capturar superpuesto en la parte inferior */}
+            <View style={styles.captureBar}>
+              <TouchableOpacity style={styles.captureButton} onPress={takePicture}>
+                <View style={styles.captureButtonInner} />
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : (
+          <View style={styles.previewContainer}>
+            <Image
+              source={{ uri: capturedPhoto }}
+              style={styles.previewImage}
+              resizeMode="contain"
+            />
+            <View style={styles.previewActions}>
+              <TouchableOpacity
+                style={styles.btnRetry}
+                onPress={() => setCapturedPhoto(null)}
+              >
+                <Ionicons name="camera-reverse-outline" size={18} color="white" style={{ marginRight: 6 }} />
+                <Text style={styles.btnRetryText}>Nueva foto</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.btnProcessing}
+                onPress={processTicket}
+              >
+                <Ionicons name="scan-outline" size={18} color="white" style={{ marginRight: 6 }} />
+                <Text style={styles.btnProcessingText}>Escanear</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
       </View>
     </Modal>
   );

@@ -236,25 +236,6 @@ export default function NotificationsScreen({ navigation }) {
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
-        {isAndroidExpoGo ? (
-          <View style={styles.warningBox}>
-            <Ionicons name="warning-outline" size={18} color="#92400E" />
-            <Text style={styles.warningText}>
-              En Expo Go Android las notificaciones no son compatibles. Para probar este flujo, usá un development build o un cliente compatible.
-            </Text>
-          </View>
-        ) : null}
-
-        <TouchableOpacity style={styles.testBtn} onPress={handleTestNotification}>
-          <Ionicons name="send-outline" size={16} color={colors.primary} />
-          <Text style={styles.testBtnText}>Probar notificacion en este celu</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.testBtn} onPress={handleRemotePushTest}>
-          <Ionicons name="cloud-upload-outline" size={16} color={colors.primary} />
-          <Text style={styles.testBtnText}>Probar push real (backend)</Text>
-        </TouchableOpacity>
-
         {!loadingFeed && notifications.length === 0 ? (
           <View style={styles.emptyCard}>
             <Ionicons name="notifications-off-outline" size={18} color={colors.textSecondary} />

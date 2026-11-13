@@ -28,6 +28,7 @@ import AgregarViviendaScreen from '../screens/vivienda/AgregarViviendaScreen';
 import SalidasPorCategoriaScreen from '../screens/vivienda/SalidasPorCategoriaScreen';
 import CategoriaDetalleScreen from '../screens/vivienda/CategoriaDetalleScreen';
 import NotificationsScreen from '../screens/NotificationsScreen';
+import ActividadesRecientesScreen from '../screens/ActividadesRecientesScreen';
 import { AuthContext } from '../context/AuthContext';
 
 const Tab = createBottomTabNavigator();
@@ -54,6 +55,7 @@ function HomeStack() {
       <Stack.Screen name="PerfilAlias" component={PerfilAliasScreen} />
       <Stack.Screen name="NotificationSettings" component={NotificationSettingsScreen} />
       <Stack.Screen name="Notifications" component={NotificationsScreen} />
+      <Stack.Screen name="ActividadesRecientes" component={ActividadesRecientesScreen} />
     </Stack.Navigator>
   );
 }
