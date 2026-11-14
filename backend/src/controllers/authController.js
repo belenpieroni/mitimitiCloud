@@ -305,3 +305,44 @@ exports.marcarTodasLeidas = async (req, res, next) => {
     next(error);
   }
 };
+
+exports.resetPassword = async (req, res, next) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({ ok: false, error: 'Email y nueva contraseña requeridos.' });
+    }
+
+    if (!validateEmail(email)) {
+      return res.status(400).json({ ok: false, error: 'Email inválido.' });
+    }
+
+    if (!validatePassword(password)) {
+      return res.status(400).json({ ok: false, error: `La contraseña debe tener al menos ${MIN_PASSWORD_LENGTH} caracteres.` });
+    }
+
+    const emailNorm = email.trim().toLowerCase();
+    const { rows } = await pool.query(
+      'SELECT id FROM usuarios WHERE email = $1',
+      [emailNorm]
+    );
+
+    if (!rows.length) {
+      return res.status(404).json({ ok: false, error: 'No existe ningún usuario registrado con ese email.' });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    await pool.query(
+      'UPDATE usuarios SET password = $1 WHERE email = $2',
+      [hashedPassword, emailNorm]
+    );
+
+    return res.json({ ok: true, data: { message: 'Contraseña actualizada con éxito.' } });
+  } catch (error) {
+    next(error);
+  }
+};
+

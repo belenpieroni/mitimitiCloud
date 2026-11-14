@@ -1,5 +1,27 @@
 const jwt = require('jsonwebtoken');
 
+function optionalAuth(req, res, next) {
+  try {
+    const authHeader = req.headers.authorization || '';
+    const [scheme, token] = authHeader.split(' ');
+
+    if (scheme === 'Bearer' && token) {
+      const payload = jwt.verify(
+        token,
+        process.env.JWT_SECRET || 'mitimiti_seguro_2026'
+      );
+      req.user = {
+        id: payload.id,
+        email: payload.email,
+        name: payload.name,
+      };
+    }
+  } catch (error) {
+    // Si el token es inválido o no vino, req.user queda undefined y continúa
+  }
+  return next();
+}
+
 function requireAuth(req, res, next) {
   try {
     const authHeader = req.headers.authorization || '';
@@ -26,4 +48,4 @@ function requireAuth(req, res, next) {
   }
 }
 
-module.exports = { requireAuth };
+module.exports = { requireAuth, optionalAuth };

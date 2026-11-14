@@ -18,14 +18,26 @@ import {
   eliminarServicioVivienda,
   getMiVivienda,
   crearMiVivienda,
+  salirDeMiVivienda,
   obtenerInvitacionVivienda,
   marcarPagadoVivienda,
   eliminarGastoVivienda
 } from '../../services/viviendaService';
+
 const coloresDisponibles = [
   '#473472', '#526D82', '#9DB2BF', '#42b271',
   '#c084fc', '#f97316', '#ec6c6a', '#38bdf8',
 ];
+
+// Formateador: Si es entero muestra 0 decimales (ej: $0, $15.000). Si tiene centavos muestra 2 decimales (ej: $15.000,50)
+const formatPesos = (monto) => {
+  const valor = Number(monto) || 0;
+  const tieneDecimales = valor % 1 !== 0;
+  return valor.toLocaleString('es-AR', {
+    minimumFractionDigits: tieneDecimales ? 2 : 0,
+    maximumFractionDigits: 2,
+  });
+};
 
 function getIniciales(nombre) {
   if (typeof nombre !== 'string') return '??';
@@ -397,6 +409,41 @@ export default function ViviendaDashboard({ navigation }) {
     }
   };
 
+  const handleSalirVivienda = () => {
+    const esCreador = miVivienda?.esCreador || miVivienda?.creadorId === user?.id;
+    const soloMiembro = (miVivienda?.miembros || []).length <= 1;
+    const accion = esCreador && soloMiembro ? 'eliminar' : esCreador ? 'transferir y salir' : 'salir';
+
+    const titulo = esCreador && soloMiembro
+      ? 'Eliminar vivienda'
+      : 'Salir de la vivienda';
+
+    const mensaje = esCreador && soloMiembro
+      ? `Estás a punto de eliminar "${miVivienda?.nombre}". Se borrarán todos los servicios y gastos registrados. Esta acción no se puede deshacer.`
+      : esCreador
+        ? `Sos el creador de "${miVivienda?.nombre}". Si salís, el rol de creador se transferirá al próximo integrante. ¿Querés continuar?`
+        : `Estás por salir de "${miVivienda?.nombre}". Podrás unirte a otra vivienda después.`;
+
+    Alert.alert(titulo, mensaje, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: esCreador && soloMiembro ? 'Eliminar' : 'Salir',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await salirDeMiVivienda();
+            setModalMiembrosVisible(false);
+            setMiVivienda(null);
+            setGastos([]);
+            setServicios([]);
+            setModalInicioViviendaVisible(true);
+          } catch (e) {
+            Alert.alert('Error', e.message || 'No se pudo salir de la vivienda.');
+          }
+        },
+      },
+    ]);
+  };
 
   return (
     <View style={styles.container}>
@@ -441,20 +488,21 @@ export default function ViviendaDashboard({ navigation }) {
           </ScrollView>
         </View>
 
+        {/* TARJETA TOTAL DEL MES */}
         <TouchableOpacity
           style={styles.totalCard}
           onPress={() => miVivienda ? navigation.navigate('SalidasPorCategoria') : Alert.alert('Vivienda', 'Primero creá o uníte a una vivienda.')}
         >
           <Text style={styles.totalLabel}>Total del mes</Text>
-          <Text style={styles.totalAmount}>${totalMes.toLocaleString('es-AR')}</Text>
+          <Text style={styles.totalAmount}>${formatPesos(totalMes)}</Text>
           <View style={styles.badgesRow}>
             <View style={styles.badge}>
               <Text style={styles.badgeLabel}>Tu parte pendiente</Text>
-              <Text style={styles.badgeValue}>${tuPartePendiente.toLocaleString('es-AR')}</Text>
+              <Text style={styles.badgeValue}>${formatPesos(tuPartePendiente)}</Text>
             </View>
             <View style={styles.badge}>
               <Text style={styles.badgeLabel}>Ya pagado</Text>
-              <Text style={[styles.badgeValue, { color: colors.greenGlobal }]}>${yaPagado.toLocaleString('es-AR')}</Text>
+              <Text style={[styles.badgeValue, { color: colors.greenGlobal }]}>${formatPesos(yaPagado)}</Text>
             </View>
           </View>
 
@@ -500,7 +548,6 @@ export default function ViviendaDashboard({ navigation }) {
           const isUrgente = diffDays >= 0 && diffDays <= 3;
 
           const iconName = ICONS_MAP[srv.nombre] || 'receipt-outline';
-          const montoSafe = srv.monto != null ? srv.monto : 0;
           const tuParte = srv.monto_responsabilidad_usuario || 0;
           return (
             <TouchableOpacity key={srv.id} style={styles.servicioCard} onPress={() => setServicioSeleccionado(srv)}>
@@ -518,13 +565,13 @@ export default function ViviendaDashboard({ navigation }) {
                 <Text style={[styles.servicioDate, (isUrgente || isVencido) && { color: colors.redGlobal, fontWeight: isVencido ? 'bold' : 'normal' }]}>
                   {isVencido ? 'Venció el' : 'Vence:'} {targetDate.toLocaleDateString('es-AR', { day: 'numeric', month: 'long' })}
                 </Text>
-                <Text style={styles.servicioTuParte}>Tu parte: {srv.monto != null ? `$${tuParte.toLocaleString('es-AR')}` : '$ –'}</Text>
+                <Text style={styles.servicioTuParte}>Tu parte: {srv.monto != null ? `$${formatPesos(tuParte)}` : '$ –'}</Text>
                 <View style={{ marginTop: 6 }}>
                   <AvatarStack personas={srv.participantes || []} />
                 </View>
               </View>
               <View style={styles.servicioRight}>
-                <Text style={styles.servicioAmount}>{srv.monto != null ? `$${srv.monto.toLocaleString('es-AR')}` : '$ –'}</Text>
+                <Text style={styles.servicioAmount}>{srv.monto != null ? `$${formatPesos(srv.monto)}` : '$ –'}</Text>
                 {srv.isVariable ? (
                   srv.status === 'PENDIENTE'
                     ? <View style={styles.badgePendiente}><Text style={styles.badgePendienteText}>Esperando Factura</Text></View>
@@ -638,12 +685,12 @@ export default function ViviendaDashboard({ navigation }) {
                 </Text>
                 <Text style={[styles.servicioTuParte, { fontSize: 13, marginTop: 4 }]}>
                   Tu parte: <Text style={{ fontWeight: 'bold', color: '#E65100' }}>
-                    ${(gasto.monto_responsabilidad_usuario || 0).toLocaleString('es-AR')}
+                    ${formatPesos(gasto.monto_responsabilidad_usuario || 0)}
                   </Text>
                 </Text>
               </View>
               <View style={styles.servicioRight}>
-                <Text style={styles.servicioAmount}>${(gasto.monto || 0).toLocaleString('es-AR')}</Text>
+                <Text style={styles.servicioAmount}>${formatPesos(gasto.monto || 0)}</Text>
                 {gasto.status === 'PAGADO' ? (
                   <View style={styles.badgeAlDia}><Text style={styles.badgeAlDiaText}>Pagado</Text></View>
                 ) : (
@@ -748,6 +795,7 @@ export default function ViviendaDashboard({ navigation }) {
         )}
       </ScrollView>
 
+      {/* MODAL DETALLE DE SERVICIO */}
       <Modal visible={!!servicioSeleccionado} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <TouchableOpacity style={StyleSheet.absoluteFill} onPress={() => setServicioSeleccionado(null)} />
@@ -775,7 +823,7 @@ export default function ViviendaDashboard({ navigation }) {
                   <Text style={styles.badgePeriodoText}>{servicioSeleccionado.periodicidad}</Text>
                 </View>
                 <Text style={[styles.servicioAmount, { fontSize: 32, marginVertical: 8 }]}>
-                  {servicioSeleccionado.monto != null ? `$${servicioSeleccionado.monto.toLocaleString('es-AR')}` : '$ –'}
+                  {servicioSeleccionado.monto != null ? `$${formatPesos(servicioSeleccionado.monto)}` : '$ –'}
                 </Text>
                 {servicioSeleccionado.isVariable ? (
                   <View style={[
@@ -807,7 +855,7 @@ export default function ViviendaDashboard({ navigation }) {
                   <Text style={{ fontSize: 14, color: colors.textSecondary }}>
                     Tu parte: <Text style={{ fontWeight: 'bold' }}>
                       {servicioSeleccionado.monto_responsabilidad_usuario != null
-                        ? `$${servicioSeleccionado.monto_responsabilidad_usuario.toLocaleString('es-AR')}`
+                        ? `$${formatPesos(servicioSeleccionado.monto_responsabilidad_usuario)}`
                         : '$ –'}
                     </Text>
                   </Text>
@@ -1160,6 +1208,22 @@ export default function ViviendaDashboard({ navigation }) {
                 );
               })}
             </ScrollView>
+
+            <TouchableOpacity
+              style={styles.btnSalirVivienda}
+              onPress={handleSalirVivienda}
+            >
+              <Ionicons
+                name={(miVivienda?.esCreador || miVivienda?.creadorId === user?.id) && (miVivienda?.miembros || []).length <= 1 ? "trash-outline" : "exit-outline"}
+                size={18}
+                color="#EF4444"
+              />
+              <Text style={styles.btnSalirViviendaTxt}>
+                {(miVivienda?.esCreador || miVivienda?.creadorId === user?.id) && (miVivienda?.miembros || []).length <= 1
+                  ? "Eliminar vivienda"
+                  : "Salir de la vivienda"}
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -1220,7 +1284,7 @@ const styles = StyleSheet.create({
   btnAcuerdosText: { color: colors.textSecondary, fontWeight: '600', fontSize: 13 },
 
   totalCard: { backgroundColor: colors.textSecondary, borderRadius: 20, padding: 20, marginBottom: 30 },
-  totalLabel: { color: 'rgba(255,255,255,0.7)', fontSize: 13, marginBottom: 8 },
+  totalLabel: { color: 'rgba(255,255,255,0.85)', fontSize: 13, fontWeight: '700', marginBottom: 6 },
   totalAmount: { color: '#fff', fontSize: 36, fontWeight: 'bold', marginVertical: 8 },
   badgesRow: { flexDirection: 'row', gap: 12, marginTop: 10 },
   badge: { backgroundColor: 'rgba(255,255,255,0.15)', padding: 12, borderRadius: 12, flex: 1 },
@@ -1319,6 +1383,23 @@ const styles = StyleSheet.create({
   miembroAvatarText: { color: 'white', fontSize: 11, fontWeight: '700' },
   miembroNombre: { fontSize: 14, color: colors.textPrimary, fontWeight: '600' },
   miembroRol: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+  btnSalirVivienda: {
+    marginTop: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: 14,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FEE2E2',
+  },
+  btnSalirViviendaTxt: {
+    color: '#EF4444',
+    fontSize: 14,
+    fontWeight: '700',
+  },
 
   formContainer: { width: '100%', gap: 16, paddingBottom: 8 },
   formSection: { width: '100%' },

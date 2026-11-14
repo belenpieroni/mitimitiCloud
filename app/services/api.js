@@ -80,7 +80,12 @@ async function request(endpoint, options = {}) {
   const json = await response.json();
 
   if (!response.ok || !json.ok) {
-    throw new Error(json.error || `Error ${response.status}`);
+    const err = new Error(json.error || `Error ${response.status}`);
+    err.status = response.status;
+    // Preservar campos extra que el backend pueda incluir (ej: viviendaActual, viviendaDestino)
+    if (json.viviendaActual) err.viviendaActual = json.viviendaActual;
+    if (json.viviendaDestino) err.viviendaDestino = json.viviendaDestino;
+    throw err;
   }
 
   return json.data;

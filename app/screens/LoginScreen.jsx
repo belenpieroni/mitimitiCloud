@@ -1,13 +1,22 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { 
   View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, 
-  ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Image 
+  ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Image,
+  Modal, Pressable 
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 import { useAuth } from '../context/AuthContext';
-import { loginUser, registerUser } from '../services/authService';
+import { loginUser, registerUser, resetPassword } from '../services/authService';
 import { registrarTokenDispositivo, isExpoGoAndroid } from '../services/notificationsService';
+
+// Valida que sea estrictamente formato usuario@gmail.com
+const isValidEmail = (val) => {
+  if (!val) return false;
+  // Expresión regular estándar: texto + @ + dominio + . + extensión de al menos 2 letras
+  const regex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+  return regex.test(val.trim());
+};
 
 export default function LoginScreen() {
   const { login } = useAuth();
@@ -15,13 +24,69 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [secureText, setSecureText] = useState(true);
 
+  const scrollRef = useRef(null);
+  const passwordFieldY = useRef(0);
+
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
-  const isFormValid = activeTab === 'login' 
-    ? email.length > 0 && password.length > 0 
-    : name.length > 0 && email.length > 0 && password.length > 0;
+  // Estado para modal de restablecer contraseña
+  const [resetModalVisible, setResetModalVisible] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetPasswordVal, setResetPasswordVal] = useState('');
+  const [resetSecureText, setResetSecureText] = useState(true);
+  const [resetLoading, setResetLoading] = useState(false);
+
+  // Validaciones en tiempo real
+  const isEmailValid = isValidEmail(email);
+  const isEmailError = email.length > 0 && !isEmailValid;
+
+  const isPasswordValid = activeTab === 'register' ? password.length >= 8 : password.length > 0;
+  const isPasswordError = activeTab === 'register' && password.length > 0 && password.length < 8;
+
+  const isNameValid = activeTab === 'register' ? name.trim().length > 0 : true;
+
+  // Validaciones del modal de restablecimiento
+  const isResetEmailValid = isValidEmail(resetEmail);
+  const isResetPasswordValid = resetPasswordVal.length >= 8;
+  const isResetFormValid = isResetEmailValid && isResetPasswordValid;
+
+  // El botón solo se activa si todo cumple las reglas
+  const isFormValid = isEmailValid && isPasswordValid && isNameValid;
+
+  const handleResetPassword = async () => {
+    if (!isResetFormValid) return;
+
+    setResetLoading(true);
+    try {
+      await resetPassword({
+        email: resetEmail.trim().toLowerCase(),
+        password: resetPasswordVal,
+      });
+
+      Alert.alert(
+        '¡Contraseña actualizada!',
+        'Tu contraseña ha sido restablecida exitosamente. Ya podés iniciar sesión con tu nueva clave.',
+        [
+          {
+            text: 'Iniciar sesión',
+            onPress: () => {
+              setResetModalVisible(false);
+              setEmail(resetEmail.trim().toLowerCase());
+              setPassword('');
+              setActiveTab('login');
+            },
+          },
+        ]
+      );
+    } catch (error) {
+      const errorMsg = error.message || 'No se pudo restablecer la contraseña';
+      Alert.alert('Error al restablecer', errorMsg);
+    } finally {
+      setResetLoading(false);
+    }
+  };
 
   const handleSubmit = async () => {
     if (!isFormValid) return;
@@ -31,7 +96,7 @@ export default function LoginScreen() {
       if (activeTab === 'register') {
         await registerUser({
           name: name.trim(),
-          email: email.trim(),
+          email: email.trim().toLowerCase(),
           password,
         });
 
@@ -43,7 +108,7 @@ export default function LoginScreen() {
         setPassword('');
       } else {
         const authData = await loginUser({
-          email: email.trim(),
+          email: email.trim().toLowerCase(),
           password,
         });
 
@@ -70,19 +135,21 @@ export default function LoginScreen() {
     }
   };
 
-  const RootContainer = Platform.OS === 'ios' ? KeyboardAvoidingView : View;
-
   return (
-    <RootContainer 
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined} 
+    <KeyboardAvoidingView 
+      behavior={Platform.OS === 'ios' ? 'padding' : 'padding'} 
       style={styles.container}
+      keyboardVerticalOffset={Platform.OS === 'android' ? 24 : 0}
     >
       <ScrollView 
+        ref={scrollRef}
         contentContainerStyle={styles.scrollContainer} 
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
       >
         
-        
+        {/* LOGO */}
         <View style={styles.logoContainer}>
           <View style={styles.logoBox}>
             <Image 
@@ -95,7 +162,7 @@ export default function LoginScreen() {
           <Text style={styles.subtitle}>Dividí gastos sin complicarte</Text>
         </View>
 
-        
+        {/* TABS LOGIN / REGISTRO */}
         <View style={styles.tabContainer}>
           <TouchableOpacity 
             style={[styles.tabButton, activeTab === 'login' && styles.tabButtonActive]} 
@@ -115,7 +182,7 @@ export default function LoginScreen() {
           </TouchableOpacity>
         </View>
 
-        
+        {/* FORMULARIO */}
         <View style={styles.formContainer}>
           {activeTab === 'register' && (
             <View style={styles.inputWrapper}>
@@ -137,16 +204,17 @@ export default function LoginScreen() {
             </View>
           )}
 
-          <View style={styles.inputWrapper}>
+          {/* INPUT EMAIL */}
+          <View style={[styles.inputWrapper, isEmailError && styles.inputWrapperError]}>
             <Ionicons 
               name="mail-outline" 
               size={20} 
-              color={colors.textSecondary} 
+              color={isEmailError ? '#EF4444' : colors.textSecondary} 
               style={styles.inputIcon} 
             />
             <TextInput
               style={styles.input}
-              placeholder="Email"
+              placeholder="Email (ej: usuario@gmail.com)"
               placeholderTextColor="#A4A4A4"
               value={email}
               onChangeText={setEmail}
@@ -154,13 +222,32 @@ export default function LoginScreen() {
               autoCapitalize="none"
               editable={!loading}
             />
+            {isEmailError && (
+              <Ionicons name="close-circle" size={18} color="#EF4444" />
+            )}
+            {isEmailValid && (
+              <Ionicons name="checkmark-circle" size={18} color="#10B981" />
+            )}
           </View>
+          {isEmailError && (
+            <Text style={styles.fieldErrorText}>Ingresá un correo electrónico válido (ej: usuario@gmail.com)</Text>
+          )}
 
-          <View style={styles.inputWrapper}>
+          {/* INPUT CONTRASEÑA */}
+          <View 
+            style={[styles.inputWrapper, isPasswordError && styles.inputWrapperError]}
+            onLayout={(e) => {
+              // Guardamos la posición Y del wrapper de contraseña para hacer scroll
+              if (Platform.OS === 'android') {
+                const { y } = e.nativeEvent.layout;
+                passwordFieldY.current = y;
+              }
+            }}
+          >
             <Ionicons 
               name="lock-closed-outline" 
               size={20} 
-              color={colors.textSecondary} 
+              color={isPasswordError ? '#EF4444' : colors.textSecondary} 
               style={styles.inputIcon} 
             />
             <TextInput
@@ -172,7 +259,25 @@ export default function LoginScreen() {
               secureTextEntry={secureText}
               autoCapitalize="none"
               editable={!loading}
+              onFocus={() => {
+                if (Platform.OS === 'android') {
+                  setTimeout(() => {
+                    scrollRef.current?.scrollTo({ y: passwordFieldY.current, animated: true });
+                  }, 100);
+                }
+              }}
             />
+
+            {/* CONTADOR EN VIVO DIRECTO DENTRO DEL INPUT */}
+            {activeTab === 'register' && password.length > 0 && (
+              <Text style={[
+                styles.inlineCounter,
+                { color: password.length >= 8 ? '#10B981' : '#EF4444' }
+              ]}>
+                {password.length}/8
+              </Text>
+            )}
+
             <TouchableOpacity 
               onPress={() => setSecureText(!secureText)} 
               style={styles.eyeIcon}
@@ -185,14 +290,40 @@ export default function LoginScreen() {
             </TouchableOpacity>
           </View>
 
+          {/* MENSAJE EXPLICATIVO INFERIOR */}
+          {activeTab === 'register' && password.length > 0 && (
+            <View style={styles.passwordValidationRow}>
+              <Ionicons 
+                name={password.length >= 8 ? "checkmark-circle" : "alert-circle"} 
+                size={16} 
+                color={password.length >= 8 ? "#10B981" : "#EF4444"} 
+              />
+              <Text style={[
+                styles.passwordValidationText,
+                { color: password.length >= 8 ? "#10B981" : "#EF4444" }
+              ]}>
+                {password.length >= 8 
+                  ? 'Contraseña válida' 
+                  : `Mínimo 8 caracteres (te faltan ${8 - password.length})`}
+              </Text>
+            </View>
+          )}
+
           {activeTab === 'login' && (
-            <TouchableOpacity style={styles.forgotBtn}>
+            <TouchableOpacity 
+              style={styles.forgotBtn}
+              onPress={() => {
+                setResetEmail(email.trim());
+                setResetPasswordVal('');
+                setResetModalVisible(true);
+              }}
+            >
               <Text style={styles.forgotText}>¿Olvidaste tu contraseña?</Text>
             </TouchableOpacity>
           )}
         </View>
 
-        
+        {/* BOTÓN PRINCIPAL */}
         <TouchableOpacity 
           style={[
             styles.btnPrimary, 
@@ -210,10 +341,13 @@ export default function LoginScreen() {
           )}
         </TouchableOpacity>
 
-        
+        {/* TOGGLE FOOTER */}
         <TouchableOpacity 
           style={styles.footerToggle} 
-          onPress={() => setActiveTab(activeTab === 'login' ? 'register' : 'login')}
+          onPress={() => {
+            setActiveTab(activeTab === 'login' ? 'register' : 'login');
+            setPassword('');
+          }}
           disabled={loading}
         >
           <Text style={styles.footerSubText}>
@@ -225,7 +359,156 @@ export default function LoginScreen() {
         </TouchableOpacity>
 
       </ScrollView>
-    </RootContainer>
+
+      {/* MODAL RESTABLECER CONTRASEÑA */}
+      <Modal
+        visible={resetModalVisible}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setResetModalVisible(false)}
+      >
+        <KeyboardAvoidingView 
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
+          <Pressable style={styles.modalBackdrop} onPress={() => setResetModalVisible(false)} />
+          
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Restablecer contraseña</Text>
+              <TouchableOpacity 
+                onPress={() => setResetModalVisible(false)}
+                style={styles.modalCloseBtn}
+              >
+                <Ionicons name="close" size={22} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalSubtitle}>
+              Ingresá tu correo electrónico registrado y tu nueva contraseña.
+            </Text>
+
+            {/* INPUT EMAIL */}
+            <View style={[
+              styles.inputWrapper,
+              resetEmail.length > 0 && !isResetEmailValid && styles.inputWrapperError
+            ]}>
+              <Ionicons 
+                name="mail-outline" 
+                size={20} 
+                color={resetEmail.length > 0 && !isResetEmailValid ? '#EF4444' : colors.textSecondary} 
+                style={styles.inputIcon} 
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="Email registrado"
+                placeholderTextColor="#A4A4A4"
+                value={resetEmail}
+                onChangeText={setResetEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                editable={!resetLoading}
+              />
+              {resetEmail.length > 0 && (
+                <Ionicons 
+                  name={isResetEmailValid ? "checkmark-circle" : "close-circle"} 
+                  size={18} 
+                  color={isResetEmailValid ? "#10B981" : "#EF4444"} 
+                />
+              )}
+            </View>
+
+            {/* INPUT NUEVA CONTRASEÑA */}
+            <View style={[
+              styles.inputWrapper,
+              resetPasswordVal.length > 0 && !isResetPasswordValid && styles.inputWrapperError
+            ]}>
+              <Ionicons 
+                name="lock-closed-outline" 
+                size={20} 
+                color={resetPasswordVal.length > 0 && !isResetPasswordValid ? '#EF4444' : colors.textSecondary} 
+                style={styles.inputIcon} 
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="Nueva contraseña (mín 8 car.)"
+                placeholderTextColor="#A4A4A4"
+                value={resetPasswordVal}
+                onChangeText={setResetPasswordVal}
+                secureTextEntry={resetSecureText}
+                autoCapitalize="none"
+                editable={!resetLoading}
+              />
+
+              {resetPasswordVal.length > 0 && (
+                <Text style={[
+                  styles.inlineCounter,
+                  { color: resetPasswordVal.length >= 8 ? '#10B981' : '#EF4444' }
+                ]}>
+                  {resetPasswordVal.length}/8
+                </Text>
+              )}
+
+              <TouchableOpacity 
+                onPress={() => setResetSecureText(!resetSecureText)} 
+                style={styles.eyeIcon}
+              >
+                <Ionicons 
+                  name={resetSecureText ? "eye-outline" : "eye-off-outline"} 
+                  size={20} 
+                  color={colors.textSecondary} 
+                />
+              </TouchableOpacity>
+            </View>
+
+            {/* MENSAJE EN VIVO DE VALIDACIÓN */}
+            {resetPasswordVal.length > 0 && (
+              <View style={styles.passwordValidationRow}>
+                <Ionicons 
+                  name={resetPasswordVal.length >= 8 ? "checkmark-circle" : "alert-circle"} 
+                  size={16} 
+                  color={resetPasswordVal.length >= 8 ? "#10B981" : "#EF4444"} 
+                />
+                <Text style={[
+                  styles.passwordValidationText,
+                  { color: resetPasswordVal.length >= 8 ? "#10B981" : "#EF4444" }
+                ]}>
+                  {resetPasswordVal.length >= 8 
+                    ? 'Contraseña válida' 
+                    : `Mínimo 8 caracteres (faltan ${8 - resetPasswordVal.length})`}
+                </Text>
+              </View>
+            )}
+
+            {/* BOTONES DE ACCIÓN */}
+            <View style={styles.modalActions}>
+              <TouchableOpacity 
+                style={styles.modalCancelBtn}
+                onPress={() => setResetModalVisible(false)}
+                disabled={resetLoading}
+              >
+                <Text style={styles.modalCancelBtnText}>Cancelar</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={[
+                  styles.modalConfirmBtn,
+                  { backgroundColor: isResetFormValid && !resetLoading ? colors.primary : '#BCCCDC' }
+                ]}
+                onPress={handleResetPassword}
+                disabled={!isResetFormValid || resetLoading}
+              >
+                {resetLoading ? (
+                  <ActivityIndicator color="white" size="small" />
+                ) : (
+                  <Text style={styles.modalConfirmBtnText}>Actualizar</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -236,23 +519,23 @@ const styles = StyleSheet.create({
   },
   scrollContainer: {
     flexGrow: 1,
-    justifyContent: Platform.OS === 'ios' ? 'center' : undefined,
+    justifyContent: 'center',
     paddingHorizontal: 24,
-    paddingTop: Platform.OS === 'android' ? 75 : 40,
-    paddingBottom: 30,
+    paddingTop: 48,
+    paddingBottom: 60,   // extra para que el scroll tenga espacio para subir
   },
   logoContainer: {
     alignItems: 'center',
-    marginBottom: 32,
+    marginBottom: 28,
   },
   logoBox: {
-    width: 84,
-    height: 84,
+    width: 76,
+    height: 76,
     backgroundColor: '#f9f7e2', 
-    borderRadius: 24,
+    borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
@@ -261,17 +544,17 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   logoImage: {
-    width: 60,
-    height: 60,
+    width: 54,
+    height: 54,
   },
   title: {
-    fontSize: 26,
+    fontSize: 24,
     fontWeight: 'bold',
     color: '#1E293B',
-    marginBottom: 6,
+    marginBottom: 4,
   },
   subtitle: {
-    fontSize: 14,
+    fontSize: 13,
     color: colors.textSecondary,
   },
   tabContainer: {
@@ -279,7 +562,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
     borderRadius: 25,
     padding: 4,
-    marginBottom: 24,
+    marginBottom: 20,
     borderWidth: 1,
     borderColor: '#EAE7F0',
   },
@@ -302,7 +585,7 @@ const styles = StyleSheet.create({
     color: 'white',
   },
   formContainer: {
-    marginBottom: 24,
+    marginBottom: 16,
   },
   inputWrapper: {
     flexDirection: 'row',
@@ -314,6 +597,35 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     paddingHorizontal: 16,
     height: 56,
+  },
+  inputWrapperError: {
+    borderColor: '#EF4444',
+    backgroundColor: '#FFF5F5',
+  },
+  inlineCounter: {
+    fontSize: 13,
+    fontWeight: '700',
+    marginRight: 8,
+  },
+  fieldErrorText: {
+    color: '#EF4444',
+    fontSize: 12,
+    marginTop: -10,
+    marginBottom: 12,
+    marginLeft: 6,
+    fontWeight: '500',
+  },
+  passwordValidationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: -8,
+    marginBottom: 12,
+    marginLeft: 6,
+  },
+  passwordValidationText: {
+    fontSize: 12,
+    fontWeight: '500',
   },
   inputIcon: {
     marginRight: 12,
@@ -341,7 +653,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
@@ -355,7 +667,7 @@ const styles = StyleSheet.create({
   },
   footerToggle: {
     alignItems: 'center',
-    marginTop: 8,
+    marginTop: 4,
   },
   footerSubText: {
     fontSize: 14,
@@ -364,5 +676,76 @@ const styles = StyleSheet.create({
   footerActionText: {
     color: colors.primary,
     fontWeight: 'bold',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  modalCard: {
+    width: '100%',
+    backgroundColor: 'white',
+    borderRadius: 24,
+    padding: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  modalCloseBtn: {
+    padding: 4,
+  },
+  modalSubtitle: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginBottom: 20,
+    lineHeight: 18,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 8,
+  },
+  modalCancelBtn: {
+    flex: 1,
+    height: 48,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F1F5F9',
+  },
+  modalCancelBtnText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  modalConfirmBtn: {
+    flex: 1.4,
+    height: 48,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalConfirmBtnText: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: 'white',
   },
 });

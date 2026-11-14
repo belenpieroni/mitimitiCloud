@@ -162,6 +162,41 @@ async function eliminarMiVivienda(req, res, next) {
   }
 }
 
+// Salir de la vivienda (funciona para cualquier miembro, creador o no)
+async function salirDeMiVivienda(req, res, next) {
+  try {
+    const vivienda = await obtenerMiViviendaBase(req.user.id);
+    if (!vivienda) {
+      const err = new Error('No pertenecés a ninguna vivienda.');
+      err.status = 404;
+      return next(err);
+    }
+
+    const esCreador = vivienda.creadorId === req.user.id;
+    const { rows: miembros } = await pool.query(
+      'SELECT usuario_id FROM vivienda_miembros WHERE vivienda_id = $1',
+      [vivienda.id]
+    );
+
+    if (esCreador && miembros.length <= 1) {
+      // Único integrante y creador → eliminar la vivienda completa
+      await pool.query('DELETE FROM viviendas WHERE id = $1', [vivienda.id]);
+    } else if (esCreador) {
+      // Creador con otros integrantes → transferir rol al primer otro miembro antes de salir
+      const nuevoCreador = miembros.find(m => m.usuario_id !== req.user.id);
+      await pool.query('UPDATE viviendas SET creador_id = $1 WHERE id = $2', [nuevoCreador.usuario_id, vivienda.id]);
+      await pool.query('DELETE FROM vivienda_miembros WHERE vivienda_id = $1 AND usuario_id = $2', [vivienda.id, req.user.id]);
+    } else {
+      // Miembro normal → solo desvincularse
+      await pool.query('DELETE FROM vivienda_miembros WHERE vivienda_id = $1 AND usuario_id = $2', [vivienda.id, req.user.id]);
+    }
+
+    res.json({ ok: true, data: { salida: true, viviendaId: vivienda.id } });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function generarObtenerInvitacion(req, res, next) {
   try {
     const vivienda = await obtenerMiViviendaBase(req.user.id);
@@ -203,16 +238,41 @@ async function generarObtenerInvitacion(req, res, next) {
   }
 }
 
+// Previsualiza la invitación sin unirse (solo nombre de la vivienda destino)
+async function previewInvitacion(req, res, next) {
+  try {
+    const { token } = req.params;
+    const { rows: [inv] } = await pool.query(
+      `SELECT it.recurso_id::text AS vivienda_id, v.nombre AS vivienda_nombre
+       FROM invitation_tokens it
+       JOIN viviendas v ON v.id = it.recurso_id
+       WHERE it.token = $1 AND it.tipo = 'vivienda' AND it.expira_en > NOW()`,
+      [token]
+    );
+    if (!inv) {
+      const err = new Error('Enlace de vivienda inválido o expirado.');
+      err.status = 404;
+      return next(err);
+    }
+    // También devolvemos la vivienda actual del usuario si la tiene
+    const actual = await obtenerMiViviendaBase(req.user.id);
+    res.json({
+      ok: true,
+      data: {
+        viviendaDestino: { id: inv.vivienda_id, nombre: inv.vivienda_nombre },
+        viviendaActual: actual ? { id: actual.id, nombre: actual.nombre } : null,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function unirseViaToken(req, res, next) {
   try {
     const { token } = req.params;
-
-    const actual = await obtenerMiViviendaBase(req.user.id);
-    if (actual) {
-      const err = new Error('Ya pertenecés a una vivienda.');
-      err.status = 409;
-      return next(err);
-    }
+    // ?force=true  → el usuario confirmó que quiere abandonar su vivienda actual
+    const force = req.query.force === 'true';
 
     const { rows: [inv] } = await pool.query(
       `SELECT token, tipo, recurso_id::text FROM invitation_tokens
@@ -223,6 +283,56 @@ async function unirseViaToken(req, res, next) {
       const err = new Error('Enlace de vivienda inválido o expirado.');
       err.status = 404;
       return next(err);
+    }
+
+    const actual = await obtenerMiViviendaBase(req.user.id);
+    if (actual) {
+      // Si la invitación apunta a la misma vivienda en la que ya está, nada que hacer
+      if (actual.id === inv.recurso_id) {
+        const miembros = await obtenerMiembrosVivienda(actual.id);
+        return res.json({
+          ok: true,
+          data: { ...actual, miembros, esCreador: actual.creadorId === req.user.id },
+        });
+      }
+
+      // Sin force → pedimos confirmación al cliente
+      if (!force) {
+        const err = new Error('Ya pertenecés a una vivienda.');
+        err.status = 409;
+        err.viviendaActual = { id: actual.id, nombre: actual.nombre };
+        // Incluimos el nombre de la vivienda destino en el error para que el
+        // frontend pueda construir el cartel de confirmación sin un segundo request
+        const { rows: [dest] } = await pool.query(
+          'SELECT nombre FROM viviendas WHERE id = $1', [inv.recurso_id]
+        );
+        err.viviendaDestino = { id: inv.recurso_id, nombre: dest?.nombre || '' };
+        return res.status(409).json({
+          ok: false,
+          error: 'Ya pertenecés a una vivienda.',
+          viviendaActual: err.viviendaActual,
+          viviendaDestino: err.viviendaDestino,
+        });
+      }
+
+      // Con force → salir / eliminar vivienda actual antes de unirse a la nueva
+      const esCreador = actual.creadorId === req.user.id;
+      const { rows: miembrosActuales } = await pool.query(
+        'SELECT usuario_id FROM vivienda_miembros WHERE vivienda_id = $1', [actual.id]
+      );
+
+      if (esCreador && miembrosActuales.length <= 1) {
+        // Único miembro y creador: eliminar la vivienda completa
+        await pool.query('DELETE FROM viviendas WHERE id = $1', [actual.id]);
+      } else if (esCreador) {
+        // Creador con otros miembros: transferir creador al primer otro miembro
+        const nuevoCreador = miembrosActuales.find(m => m.usuario_id !== req.user.id);
+        await pool.query('UPDATE viviendas SET creador_id = $1 WHERE id = $2', [nuevoCreador.usuario_id, actual.id]);
+        await pool.query('DELETE FROM vivienda_miembros WHERE vivienda_id = $1 AND usuario_id = $2', [actual.id, req.user.id]);
+      } else {
+        // Solo miembro: salir
+        await pool.query('DELETE FROM vivienda_miembros WHERE vivienda_id = $1 AND usuario_id = $2', [actual.id, req.user.id]);
+      }
     }
 
     await pool.query(
@@ -1008,7 +1118,9 @@ module.exports = {
   crearMiVivienda,
   editarMiVivienda,
   eliminarMiVivienda,
+  salirDeMiVivienda,
   generarObtenerInvitacion,
+  previewInvitacion,
   unirseViaToken,
   listarGastos, crearGasto, editarGasto, eliminarGasto,
   listarServicios, crearServicio, editarServicio, eliminarServicio, liquidarServicio,

@@ -17,6 +17,7 @@ import { colors } from '../theme/colors';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { marcarPagadoVivienda, revertirPagoVivienda } from '../services/viviendaService';
+import api from '../services/api';
 import Svg, { Circle, G } from 'react-native-svg';
 import * as Clipboard from 'expo-clipboard';
 import Toast from '../components/Toast';
@@ -31,8 +32,9 @@ const getIcono = (tipo) => (tipo === 'Vivienda' ? "home-outline" : "balloon-outl
 
 const formatPesos = (monto) => {
   const valor = Number(monto) || 0;
+  const tieneDecimales = valor % 1 !== 0; // Verifica si tiene centavos
   return valor.toLocaleString('es-AR', {
-    minimumFractionDigits: 2,
+    minimumFractionDigits: tieneDecimales ? 2 : 0, // Si es entero muestra 0 decimales, si tiene centavos muestra 2
     maximumFractionDigits: 2,
   });
 };
@@ -91,21 +93,15 @@ export default function DeudasScreen({ navigation }) {
 
     try {
       setLoading(true);
-      const url = `${API_BASE}/deudas/consolidado/${encodeURIComponent(nombreUsuario)}`;
-      const response = await fetch(url);
-      const data = await response.json();
+      const data = await api.get(`/deudas/consolidado/${encodeURIComponent(nombreUsuario)}`);
 
-      if (!response.ok || !data.ok) {
-        throw new Error(data?.error || 'No se pudo conectar al servidor');
-      }
-
-      if (Array.isArray(data.data)) {
-        setPendientes(data.data);
+      if (Array.isArray(data)) {
+        setPendientes(data);
       } else {
-        setPendientes(data.data.acreedores || []);
-        setServiciosAPagar(data.data.serviciosAPagar || []);
+        setPendientes(data.acreedores || []);
+        setServiciosAPagar(data.serviciosAPagar || []);
         
-        const pagos = data.data.pagosRecientes || [];
+        const pagos = data.pagosRecientes || [];
         pagos.sort((a, b) => new Date(b.fecha_pago || 0) - new Date(a.fecha_pago || 0));
         setPagosRecientes(pagos);
       }
@@ -327,7 +323,7 @@ export default function DeudasScreen({ navigation }) {
         >
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
             <View style={{ flex: 1, marginRight: 12 }}>
-              <Text style={styles.balanceLabel}>TOTAL A PAGAR</Text>
+              <Text style={styles.balanceLabel}>Total a pagar</Text>
               <Text style={styles.balanceAmount}>${formatPesos(totalAPagar)}</Text>
               <Text style={styles.balanceInfo}>
                 {totalConceptos} {totalConceptos === 1 ? 'deuda pendiente' : 'deudas pendientes'} - {pendientes.length} {pendientes.length === 1 ? 'acreedor' : 'acreedores'}
@@ -556,14 +552,22 @@ export default function DeudasScreen({ navigation }) {
                           </View>
 
                            <TouchableOpacity 
-                            style={[styles.btnPagarTodo, !isNetoPositivo && { backgroundColor: '#ccc' }]} 
+                            style={[
+                              styles.btnPagarTodo,
+                              !isNetoPositivo && styles.btnPagarTodoDisabled
+                            ]} 
                             disabled={!isNetoPositivo}
                             onPress={() => handlePagarTodo(acreedor, activeConcepts)}
                           >
-                            <Text style={styles.btnPagarTodoText}>
+                            <Text style={[
+                              styles.btnPagarTodoText,
+                              !isNetoPositivo && styles.btnPagarTodoTextDisabled
+                            ]}>
                               {netTotal > 0 
                                 ? `Liquidar Saldo Neto a ${acreedor.nombre} - $${formatPesos(netTotal)}`
-                                : `No hay saldo pendiente a pagar`
+                                : netTotal < 0
+                                  ? `Esperando pago de ${acreedor.nombre} ($${formatPesos(Math.abs(netTotal))})`
+                                  : `Compensado - Sin saldo pendiente a pagar`
                               }
                             </Text>
                           </TouchableOpacity>
@@ -692,7 +696,7 @@ const styles = StyleSheet.create({
   title: {  fontSize: 28, fontWeight: 'bold', color: colors.textPrimary},
   subtitle: { fontSize: 14, color: '#666', marginTop: 4 },
   balanceCard: { backgroundColor: colors.primary, borderRadius: 24, padding: 25, marginBottom: 30 },
-  balanceLabel: { color: 'rgba(255,255,255,0.7)', fontSize: 12, fontWeight: '600' },
+  balanceLabel: { color: 'rgba(255,255,255,0.85)', fontSize: 13, fontWeight: '700',  marginBottom: 6,},
   balanceAmount: { color: 'white', fontSize: 36, fontWeight: 'bold', marginVertical: 5 },
   balanceInfo: { color: 'rgba(255,255,255,0.8)', fontSize: 13 },
   sectionHeader: { fontSize: 14, fontWeight: 'bold', color: '#666', marginBottom: 15 },
@@ -719,7 +723,9 @@ const styles = StyleSheet.create({
   btnCancelar: { borderWidth: 1.5, borderColor: colors.primary, backgroundColor: 'rgba(54, 44, 97, 0.08)', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 10 },
   btnCancelarText: { fontSize: 11, fontWeight: '700', color: colors.primary },
   btnPagarTodo: { backgroundColor: colors.primary, padding: 15, borderRadius: 15, marginTop: 15, alignItems: 'center' },
+  btnPagarTodoDisabled: { backgroundColor: '#F1F5F9', borderWidth: 1, borderColor: '#E2E8F0', opacity: 0.9 },
   btnPagarTodoText: { color: 'white', fontWeight: 'bold', fontSize: 14 },
+  btnPagarTodoTextDisabled: { color: '#64748B', fontWeight: '600' },
   btnMercadoPago: { backgroundColor: '#009EE3', padding: 15, borderRadius: 15, marginTop: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
   btnMercadoPagoText: { color: 'white', fontWeight: 'bold', fontSize: 14 },
   pagoRecienteCard: { flexDirection: 'row', backgroundColor: 'white', padding: 15, borderRadius: 20, alignItems: 'center', marginBottom: 10 },
