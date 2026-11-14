@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { 
   View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, 
   ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Image,
@@ -23,6 +23,9 @@ export default function LoginScreen() {
   const [activeTab, setActiveTab] = useState('login');
   const [loading, setLoading] = useState(false);
   const [secureText, setSecureText] = useState(true);
+
+  const scrollRef = useRef(null);
+  const passwordFieldY = useRef(0);
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -134,10 +137,12 @@ export default function LoginScreen() {
 
   return (
     <KeyboardAvoidingView 
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined} 
+      behavior={Platform.OS === 'ios' ? 'padding' : 'padding'} 
       style={styles.container}
+      keyboardVerticalOffset={Platform.OS === 'android' ? 24 : 0}
     >
       <ScrollView 
+        ref={scrollRef}
         contentContainerStyle={styles.scrollContainer} 
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
@@ -229,7 +234,16 @@ export default function LoginScreen() {
           )}
 
           {/* INPUT CONTRASEÑA */}
-          <View style={[styles.inputWrapper, isPasswordError && styles.inputWrapperError]}>
+          <View 
+            style={[styles.inputWrapper, isPasswordError && styles.inputWrapperError]}
+            onLayout={(e) => {
+              // Guardamos la posición Y del wrapper de contraseña para hacer scroll
+              if (Platform.OS === 'android') {
+                const { y } = e.nativeEvent.layout;
+                passwordFieldY.current = y;
+              }
+            }}
+          >
             <Ionicons 
               name="lock-closed-outline" 
               size={20} 
@@ -245,6 +259,13 @@ export default function LoginScreen() {
               secureTextEntry={secureText}
               autoCapitalize="none"
               editable={!loading}
+              onFocus={() => {
+                if (Platform.OS === 'android') {
+                  setTimeout(() => {
+                    scrollRef.current?.scrollTo({ y: passwordFieldY.current, animated: true });
+                  }, 100);
+                }
+              }}
             />
 
             {/* CONTADOR EN VIVO DIRECTO DENTRO DEL INPUT */}
@@ -501,7 +522,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 24,
     paddingTop: 48,
-    paddingBottom: 32,
+    paddingBottom: 60,   // extra para que el scroll tenga espacio para subir
   },
   logoContainer: {
     alignItems: 'center',
