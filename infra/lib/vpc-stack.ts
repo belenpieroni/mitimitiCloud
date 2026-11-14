@@ -41,7 +41,7 @@ export class VpcStack extends cdk.Stack {
 
     this.albSecurityGroup = new ec2.SecurityGroup(this, 'AlbSg', {
       vpc: this.vpc,
-      securityGroupName: 'sg-alb',
+      securityGroupName: 'mitimiti-alb-sg',
       description: 'ALB publico: HTTP/HTTPS desde Internet',
       allowAllOutbound: true,
     });
@@ -50,7 +50,7 @@ export class VpcStack extends cdk.Stack {
 
     this.ecsSecurityGroup = new ec2.SecurityGroup(this, 'EcsSg', {
       vpc: this.vpc,
-      securityGroupName: 'sg-ecs',
+      securityGroupName: 'mitimiti-ecs-sg',
       description: 'Tareas ECS: solo reciben trafico del ALB',
       allowAllOutbound: true,
     });
@@ -62,7 +62,7 @@ export class VpcStack extends cdk.Stack {
 
     this.rdsSecurityGroup = new ec2.SecurityGroup(this, 'RdsSg', {
       vpc: this.vpc,
-      securityGroupName: 'sg-rds',
+      securityGroupName: 'mitimiti-rds-sg',
       description: 'RDS: solo recibe conexiones de ECS',
       allowAllOutbound: false,
     });
