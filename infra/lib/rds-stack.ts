@@ -40,11 +40,10 @@ export class RdsStack extends cdk.Stack {
       }),
 
       allocatedStorage: 20,
-      maxAllocatedStorage: 50,
       storageType: rds.StorageType.GP3,
       storageEncrypted: true,
 
-      backupRetention: cdk.Duration.days(7),
+      backupRetention: cdk.Duration.days(1), // Máximo permitido en el plan gratuito de AWS
       preferredBackupWindow: '06:00-06:30', // 03:00 ART
       // Single-AZ para el MVP (costo). Para producción real: multiAz: true.
       multiAz: false,

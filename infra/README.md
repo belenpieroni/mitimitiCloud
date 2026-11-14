@@ -137,10 +137,10 @@ En la Task Definition (TASK-08) se inyectan como variables de entorno con
 |---|---|
 | Motor | PostgreSQL 16 |
 | Instancia | `db.t4g.micro` |
-| Almacenamiento | 20 GB `gp3`, cifrado, autoescala hasta 50 GB |
+| Almacenamiento | 20 GB `gp3`, cifrado |
 | Subredes | `data` (aisladas), sin acceso público |
 | Security group | `sg-rds` (5432 solo desde `sg-ecs`) |
-| Backups | Automáticos, retención 7 días (ventana 03:00 ART) |
+| Backups | Automáticos, retención de 1 día (máximo del plan gratuito de AWS) |
 | Logs | `postgresql` exportado a CloudWatch |
 | Al borrar el stack | Snapshot final (`RemovalPolicy.SNAPSHOT`) |
 | Multi-AZ | No (costo del MVP). Se activa con `multiAz: true` |
