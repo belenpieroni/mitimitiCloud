@@ -130,3 +130,37 @@ En la Task Definition (TASK-08) se inyectan como variables de entorno con
 
 > Nunca commitear valores reales en `.env.example`. Ese archivo solo lleva nombres de variables
 > y valores de ejemplo.
+
+## Base de datos (RdsStack)
+
+| Parámetro | Valor |
+|---|---|
+| Motor | PostgreSQL 16 |
+| Instancia | `db.t4g.micro` |
+| Almacenamiento | 20 GB `gp3`, cifrado, autoescala hasta 50 GB |
+| Subredes | `data` (aisladas), sin acceso público |
+| Security group | `sg-rds` (5432 solo desde `sg-ecs`) |
+| Backups | Automáticos, retención 7 días (ventana 03:00 ART) |
+| Logs | `postgresql` exportado a CloudWatch |
+| Al borrar el stack | Snapshot final (`RemovalPolicy.SNAPSHOT`) |
+| Multi-AZ | No (costo del MVP). Se activa con `multiAz: true` |
+
+```bash
+npx cdk deploy RdsStack   # tarda ~10 minutos
+```
+
+Verificar que quedó `Available` y sin acceso público:
+
+```bash
+aws rds describe-db-instances --db-instance-identifier mitimiti-db \
+  --query "DBInstances[0].[DBInstanceStatus,PubliclyAccessible,Endpoint.Address]"
+```
+
+Las credenciales quedan en el secreto `mitimiti/db`:
+
+```bash
+aws secretsmanager get-secret-value --secret-id mitimiti/db --query SecretString --output text
+```
+
+> RDS para PostgreSQL 16 exige conexiones SSL (`rds.force_ssl = 1`). El pool del backend
+> tiene que conectarse con `ssl` habilitado (TASK-06).
