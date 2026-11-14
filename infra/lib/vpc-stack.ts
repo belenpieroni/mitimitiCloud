@@ -10,10 +10,14 @@ import { config } from './config';
  *  - app      : tareas ECS Fargate. Privadas, sin IP pública, salen a Internet por el NAT
  *               (necesario para Expo Push, Firebase y para bajar imágenes de ECR).
  *  - data     : RDS. Aisladas, sin ninguna ruta a Internet.
-
+ *
+ * Security groups encadenados: sg-alb -> sg-ecs (3000) -> sg-rds (5432).
  */
 export class VpcStack extends cdk.Stack {
   public readonly vpc: ec2.Vpc;
+  public readonly albSecurityGroup: ec2.SecurityGroup;
+  public readonly ecsSecurityGroup: ec2.SecurityGroup;
+  public readonly rdsSecurityGroup: ec2.SecurityGroup;
 
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
@@ -35,6 +39,42 @@ export class VpcStack extends cdk.Stack {
       },
     });
 
+    this.albSecurityGroup = new ec2.SecurityGroup(this, 'AlbSg', {
+      vpc: this.vpc,
+      securityGroupName: 'sg-alb',
+      description: 'ALB publico: HTTP/HTTPS desde Internet',
+      allowAllOutbound: true,
+    });
+    this.albSecurityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(80), 'HTTP desde Internet');
+    this.albSecurityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(443), 'HTTPS desde Internet');
+
+    this.ecsSecurityGroup = new ec2.SecurityGroup(this, 'EcsSg', {
+      vpc: this.vpc,
+      securityGroupName: 'sg-ecs',
+      description: 'Tareas ECS: solo reciben trafico del ALB',
+      allowAllOutbound: true,
+    });
+    this.ecsSecurityGroup.addIngressRule(
+      this.albSecurityGroup,
+      ec2.Port.tcp(config.appPort),
+      'Trafico del ALB al backend',
+    );
+
+    this.rdsSecurityGroup = new ec2.SecurityGroup(this, 'RdsSg', {
+      vpc: this.vpc,
+      securityGroupName: 'sg-rds',
+      description: 'RDS: solo recibe conexiones de ECS',
+      allowAllOutbound: false,
+    });
+    this.rdsSecurityGroup.addIngressRule(
+      this.ecsSecurityGroup,
+      ec2.Port.tcp(config.dbPort),
+      'PostgreSQL desde ECS',
+    );
+
     new cdk.CfnOutput(this, 'VpcId', { value: this.vpc.vpcId });
+    new cdk.CfnOutput(this, 'AlbSecurityGroupId', { value: this.albSecurityGroup.securityGroupId });
+    new cdk.CfnOutput(this, 'EcsSecurityGroupId', { value: this.ecsSecurityGroup.securityGroupId });
+    new cdk.CfnOutput(this, 'RdsSecurityGroupId', { value: this.rdsSecurityGroup.securityGroupId });
   }
 }
