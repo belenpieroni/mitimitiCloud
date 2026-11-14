@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import * as cdk from 'aws-cdk-lib';
 import { config } from '../lib/config';
+import { VpcStack } from '../lib/vpc-stack';
 
 const app = new cdk.App();
 
@@ -12,5 +13,7 @@ export const env: cdk.Environment = {
 
 cdk.Tags.of(app).add('Project', 'MitiMiti');
 cdk.Tags.of(app).add('ManagedBy', 'CDK');
+
+export const network = new VpcStack(app, 'VpcStack', { env });
 
 app.synth();
