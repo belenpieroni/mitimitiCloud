@@ -48,3 +48,32 @@ Para usar otra: `export CDK_DEFAULT_REGION=<region>` antes de correr cdk.
 | `npx cdk deploy <Stack>` | Despliega un stack |
 | `npx cdk destroy <Stack>` | Elimina un stack |
 | `npm run build` | Chequeo de tipos con `tsc` |
+
+## Red (VpcStack)
+
+```text
+                Internet
+                    │
+        ┌───────────┴───────────┐
+        │  public  (AZ a, AZ b) │  ALB + NAT Gateway        sg-alb: 80/443 desde 0.0.0.0/0
+        └───────────┬───────────┘
+        ┌───────────┴───────────┐
+        │  app     (AZ a, AZ b) │  ECS Fargate              sg-ecs: 3000 solo desde sg-alb
+        └───────────┬───────────┘
+        ┌───────────┴───────────┐
+        │  data    (AZ a, AZ b) │  RDS PostgreSQL           sg-rds: 5432 solo desde sg-ecs
+        └───────────────────────┘
+```
+
+- CIDR `10.0.0.0/16`, una subred `/24` por tipo y por AZ (6 en total).
+- `app` es privada pero sale a Internet por el NAT: el backend necesita llegar a Expo Push,
+  Firebase y ECR. `data` es aislada: no tiene ninguna ruta a Internet.
+- Un solo NAT Gateway compartido para bajar costos del MVP. En producción real se usaría uno por AZ.
+- Gateway endpoint de S3 (gratis): el tráfico a S3 no pasa por el NAT.
+
+```bash
+npx cdk deploy VpcStack
+```
+
+Los recursos quedan expuestos como propiedades del stack (`vpc`, `albSecurityGroup`,
+`ecsSecurityGroup`, `rdsSecurityGroup`) para que los usen ECS y ALB desde `bin/mitimiti.ts`.
