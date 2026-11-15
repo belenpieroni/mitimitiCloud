@@ -22,6 +22,12 @@ async function inicializarDB() {
     try {
       const client = await pool.connect();
       try {
+        // En AWS el esquema lo aplica la Lambda one-off (DbMigrationStack),
+        // así las réplicas de ECS no compiten por crear las tablas.
+        if (process.env.DB_RUN_MIGRATIONS === 'false') {
+          console.log('✓ Conectado a PostgreSQL (migraciones desactivadas)');
+          return;
+        }
         await client.query(schema);
         console.log('✓ Base de datos inicializada correctamente');
         return;
