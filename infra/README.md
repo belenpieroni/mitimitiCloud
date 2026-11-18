@@ -11,6 +11,7 @@ Cada stack se despliega por separado y el estado queda en CloudFormation.
 | `DbMigrationStack` | Lambda que aplica `schema.sql` en RDS | TASK-15 |
 | `EcrStack` | Repositorio de imágenes `mitimiti-backend` | TASK-08 |
 | `EcsStack` | Cluster ECS Fargate, Task Definition y servicio del backend | TASK-08 |
+| `AlbStack` | ALB con health check en `/health` y CloudFront con HTTPS | TASK-09 |
 
 ## Requisitos
 
@@ -266,6 +267,51 @@ aws ecs describe-services --cluster mitimiti-cluster --services mitimiti-backend
 
 Ver logs en vivo: `aws logs tail /mitimiti/ecs/backend --follow`
 
+## Entrada HTTPS (AlbStack)
+
+```text
+App Expo ──HTTPS──▶ CloudFront ──HTTP──▶ ALB (public) ──▶ tareas ECS (app) ──▶ RDS (data)
+```
+
+- **CloudFront** pone HTTPS con su certificado `*.cloudfront.net` (no hace falta dominio
+  ni ACM). Caché desactivada: es una API, todo llega al backend con sus headers
+  (`Authorization` incluido). HTTP redirige a HTTPS.
+- **ALB** en las subredes públicas, listener en el puerto 80, target group de tipo IP.
+- **Health check:** `GET /health` cada 15 s; 2 respuestas 200 seguidas para marcar la tarea
+  sana y 2 fallas (503 o timeout de 5 s) para sacarla de rotación.
+- Timeout de 60 s en ALB y CloudFront para que el OCR de tickets no corte.
+
+`AlbStack` se despliega antes que `EcsStack`, porque el servicio se registra en su target group:
+
+```bash
+npx cdk deploy AlbStack EcsStack
+```
+
+La distribución de CloudFront tarda unos 5 minutos en propagarse. Después:
+
+```bash
+API=$(aws cloudformation describe-stacks --stack-name AlbStack \
+  --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" --output text)
+curl -i $API/health
+# HTTP/2 200
+# {"status":"ok","db":"connected"}
+```
+
+Para la app: `EXPO_PUBLIC_API_URL=<ApiUrl>/api`.
+
+Ver qué réplicas están sanas:
+
+```bash
+TG=$(aws elbv2 describe-target-groups --names mitimiti-backend-tg \
+  --query "TargetGroups[0].TargetGroupArn" --output text)
+aws elbv2 describe-target-health --target-group-arn $TG \
+  --query "TargetHealthDescriptions[].[Target.Id,TargetHealth.State]"
+```
+
+> Mejora posible: hoy el ALB también se puede llamar directo por HTTP con su DNS. Para
+> forzar que todo pase por CloudFront se puede limitar `sg-alb` al prefix list
+> `com.amazonaws.global.cloudfront.origin-facing`.
+
 ### Para el resto del equipo
 
 `EcsStack` expone `cluster`, `taskDefinition`, `service`, `taskRole` y `logGroup`:
@@ -275,8 +321,9 @@ Ver logs en vivo: `aws logs tail /mitimiti/ecs/backend --follow`
 - **Recordatorios cada 48 hs (Persona 4):** la regla de EventBridge puede lanzar una tarea
   con la misma `taskDefinition` sobreescribiendo el comando (`node src/scripts/...`).
   Mientras el cron siga dentro de `app.js`, corre una vez por réplica (2 veces).
-- **Dashboard y alarmas (Persona 5):** usar `compute.service` (métricas de CPU y memoria)
-  y el log group `/mitimiti/ecs/backend`, que ya tiene 30 días de retención.
+- **Dashboard y alarmas (Persona 5):** usar `compute.service` (métricas de CPU y memoria),
+  `edge.loadBalancer` y `edge.targetGroup` (5XX, latencia, `HealthyHostCount`) y el log
+  group `/mitimiti/ecs/backend`, que ya tiene 30 días de retención.
 - **Pool con SSL (Persona 3, TASK-06):** la tarea ya recibe `DB_SSL=true`. Sin SSL, RDS
   rechaza la conexión y `/health` responde 503.
 
@@ -285,4 +332,8 @@ Ver logs en vivo: `aws logs tail /mitimiti/ecs/backend --follow`
 ```bash
 npx cdk deploy VpcStack SecretsStack RdsStack DbMigrationStack
 aws lambda invoke --function-name mitimiti-db-migration out.json && cat out.json
+
+npx cdk deploy EcrStack
+# subir la primera imagen (ver "Primer despliegue" en ECS) o correr el workflow de CD
+npx cdk deploy AlbStack EcsStack
 ```
