@@ -3,6 +3,7 @@ import * as cdk from 'aws-cdk-lib';
 import { config } from '../lib/config';
 import { VpcStack } from '../lib/vpc-stack';
 import { SecretsStack } from '../lib/secrets-stack';
+import { RdsStack } from '../lib/rds-stack';
 
 const app = new cdk.App();
 
@@ -18,5 +19,11 @@ cdk.Tags.of(app).add('ManagedBy', 'CDK');
 export const network = new VpcStack(app, 'VpcStack', { env });
 
 export const secrets = new SecretsStack(app, 'SecretsStack', { env });
+
+export const database = new RdsStack(app, 'RdsStack', {
+  env,
+  vpc: network.vpc,
+  rdsSecurityGroup: network.rdsSecurityGroup,
+});
 
 app.synth();
