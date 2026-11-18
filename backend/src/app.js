@@ -11,6 +11,7 @@ const uploadsRouter = require('./routes/uploads');
 const { errorHandler, notFound } = require('./middleware/errorHandler');
 const { iniciarCronJobs } = require('./services/cronService');
 const { inicializarDB } = require('./db');
+const { registrarApagado } = require('./shutdown');
 const authRouter = require('./routes/auth');
 
 const app = express();
@@ -43,11 +44,12 @@ app._router.stack.forEach(r => {
 
 async function start() {
   await inicializarDB();
-  app.listen(PORT, () => {
+  const server = app.listen(PORT, () => {
     console.log(`    Miti Miti backend escuchando en http://localhost:${PORT}`);
     console.log(`    Docs de endpoints disponibles en /api/juntadas`);
     iniciarCronJobs();
   });
+  registrarApagado(server);
 }
 
 start().catch((err) => {
