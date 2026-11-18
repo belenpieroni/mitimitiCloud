@@ -12,4 +12,4 @@ if [ "$EXPO_TUNNEL" = "1" ] || [ "$EXPO_TUNNEL" = "true" ]; then
   START_ARG="--tunnel"
 fi
 
-exec npx expo start $START_ARG
+exec npx expo start $START_ARG --port "${EXPO_PORT:-8083}"

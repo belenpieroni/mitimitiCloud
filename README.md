@@ -40,6 +40,7 @@ npm run start:tunnel
 Opcionalmente podés usar `npm run android`, `npm run ios` o `npm run web`.
 
 Cuando usás `scripts/dev.sh`, la variable `EXPO_PUBLIC_API_URL` se completa sola con tu IP local, así la app puede hablar con el backend sin tocar nada a mano.
+Expo usa el puerto `8083` por defecto para evitar conflictos con instalaciones locales; podés cambiarlo con `EXPO_PORT` en `.env`.
 
 ### Docker front
 

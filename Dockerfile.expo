@@ -8,6 +8,6 @@ RUN npm install --legacy-peer-deps
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-EXPOSE 8081 19000 19001 19002
+EXPOSE 8083
 
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
