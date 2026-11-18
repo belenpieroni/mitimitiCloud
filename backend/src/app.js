@@ -12,9 +12,13 @@ const { errorHandler, notFound } = require('./middleware/errorHandler');
 const { iniciarCronJobs } = require('./services/cronService');
 const { inicializarDB } = require('./db');
 const authRouter = require('./routes/auth');
+const healthRouter = require('./routes/health');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Health check del ALB: va primero, antes de cualquier middleware que pueda fallar.
+app.use('/health', healthRouter);
 
 app.use(cors());
 app.use(express.json());
@@ -50,9 +54,13 @@ async function start() {
   });
 }
 
-start().catch((err) => {
-  console.error('[startup] Error fatal al iniciar el servidor:', err);
-  process.exit(1);
-});
+// Solo levantamos el servidor si se ejecuta directo (node src/app.js).
+// Así los tests pueden hacer require('./app') y usar Supertest sin abrir el puerto ni el cron.
+if (require.main === module) {
+  start().catch((err) => {
+    console.error('[startup] Error fatal al iniciar el servidor:', err);
+    process.exit(1);
+  });
+}
 
 module.exports = app;
