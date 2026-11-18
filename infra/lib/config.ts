@@ -15,4 +15,16 @@ export const config = {
   dbName: 'mitimiti',
   /** Usuario administrador de la base. */
   dbUser: 'mitimiti',
+
+  /** Repositorio de ECR con la imagen del backend. */
+  ecrRepositoryName: 'mitimiti-backend',
+  /** Nombres de ECS: los usa también el pipeline de CD (.github/workflows/deploy.yml). */
+  ecsClusterName: 'mitimiti-cluster',
+  ecsServiceName: 'mitimiti-backend',
+  /** Nombre del contenedor dentro de la Task Definition. */
+  containerName: 'backend',
+  /** Réplicas del backend (una por AZ). */
+  desiredCount: 2,
+  /** Log group de los contenedores del backend. */
+  backendLogGroupName: '/mitimiti/ecs/backend',
 };
