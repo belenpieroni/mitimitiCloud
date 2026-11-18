@@ -164,3 +164,60 @@ aws secretsmanager get-secret-value --secret-id mitimiti/db --query SecretString
 
 > RDS para PostgreSQL 16 exige conexiones SSL (`rds.force_ssl = 1`). El pool del backend
 > tiene que conectarse con `ssl` habilitado (TASK-06).
+
+## Migración del esquema (DbMigrationStack)
+
+El esquema vive en `backend/src/migrations/schema.sql` (una sola fuente de verdad).
+En local, el backend lo aplica al arrancar. En AWS **no**: con 2 o más réplicas en ECS
+arrancando a la vez, todas intentarían crear las tablas al mismo tiempo.
+
+En su lugar, una Lambda dentro de la VPC aplica el esquema una sola vez, dentro de una
+transacción, y devuelve la lista de tablas.
+
+```bash
+npx cdk deploy DbMigrationStack
+
+# Ejecución one-off (repetir solo cuando cambie schema.sql y se vuelva a desplegar el stack)
+aws lambda invoke --function-name mitimiti-db-migration \
+  --cli-binary-format raw-in-base64-out out.json && cat out.json
+```
+
+Respuesta esperada (equivalente a `psql -c "\dt"`, 17 tablas):
+
+```json
+{
+  "ok": true,
+  "tables": [
+    "acuerdo_participantes",
+    "invitation_tokens",
+    "juntada_gastos",
+    "juntada_pagos_deudas",
+    "juntada_participantes",
+    "juntada_subgrupos",
+    "juntadas",
+    "notificacion_recordatorios_enviados",
+    "notificaciones_usuario",
+    "perfiles",
+    "usuario_device_tokens",
+    "usuarios",
+    "vivienda_acuerdos",
+    "vivienda_gastos",
+    "vivienda_miembros",
+    "vivienda_servicios",
+    "viviendas"
+  ],
+  "durationMs": 812
+}
+```
+
+Los logs quedan en CloudWatch, en el log group `/mitimiti/db-migration`.
+
+En ECS, la Task Definition tiene que definir `DB_RUN_MIGRATIONS=false` para que el backend
+no ejecute `schema.sql` al arrancar.
+
+### Orden completo de despliegue
+
+```bash
+npx cdk deploy VpcStack SecretsStack RdsStack DbMigrationStack
+aws lambda invoke --function-name mitimiti-db-migration out.json && cat out.json
+```

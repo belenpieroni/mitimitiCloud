@@ -4,6 +4,7 @@ import { config } from '../lib/config';
 import { VpcStack } from '../lib/vpc-stack';
 import { SecretsStack } from '../lib/secrets-stack';
 import { RdsStack } from '../lib/rds-stack';
+import { DbMigrationStack } from '../lib/db-migration-stack';
 
 const app = new cdk.App();
 
@@ -24,6 +25,13 @@ export const database = new RdsStack(app, 'RdsStack', {
   env,
   vpc: network.vpc,
   rdsSecurityGroup: network.rdsSecurityGroup,
+});
+
+new DbMigrationStack(app, 'DbMigrationStack', {
+  env,
+  vpc: network.vpc,
+  rdsSecurityGroup: network.rdsSecurityGroup,
+  dbSecret: database.dbSecret,
 });
 
 app.synth();
