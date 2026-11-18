@@ -8,6 +8,7 @@ import { DbMigrationStack } from '../lib/db-migration-stack';
 import { EcrStack } from '../lib/ecr-stack';
 import { EcsStack } from '../lib/ecs-stack';
 import { AlbStack } from '../lib/alb-stack';
+import { GithubOidcStack } from '../lib/github-oidc-stack';
 
 const app = new cdk.App();
 
@@ -53,6 +54,11 @@ export const compute = new EcsStack(app, 'EcsStack', {
   appSecret: secrets.appSecret,
   dbSecret: database.dbSecret,
   targetGroup: edge.targetGroup,
+});
+
+new GithubOidcStack(app, 'GithubOidcStack', {
+  env,
+  repository: registry.repository,
 });
 
 app.synth();
