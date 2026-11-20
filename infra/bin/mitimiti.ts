@@ -5,6 +5,8 @@ import { VpcStack } from '../lib/vpc-stack';
 import { SecretsStack } from '../lib/secrets-stack';
 import { RdsStack } from '../lib/rds-stack';
 import { DbMigrationStack } from '../lib/db-migration-stack';
+import { EcrStack } from '../lib/ecr-stack';
+import { EcsStack } from '../lib/ecs-stack';
 
 const app = new cdk.App();
 
@@ -31,6 +33,17 @@ new DbMigrationStack(app, 'DbMigrationStack', {
   env,
   vpc: network.vpc,
   rdsSecurityGroup: network.rdsSecurityGroup,
+  dbSecret: database.dbSecret,
+});
+
+export const registry = new EcrStack(app, 'EcrStack', { env });
+
+export const compute = new EcsStack(app, 'EcsStack', {
+  env,
+  vpc: network.vpc,
+  ecsSecurityGroup: network.ecsSecurityGroup,
+  repository: registry.repository,
+  appSecret: secrets.appSecret,
   dbSecret: database.dbSecret,
 });
 

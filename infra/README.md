@@ -9,6 +9,8 @@ Cada stack se despliega por separado y el estado queda en CloudFormation.
 | `SecretsStack` | Secreto `mitimiti/app` (JWT, Firebase) | TASK-13 |
 | `RdsStack` | PostgreSQL 16 gestionado + secreto `mitimiti/db` | TASK-14 |
 | `DbMigrationStack` | Lambda que aplica `schema.sql` en RDS | TASK-15 |
+| `EcrStack` | Repositorio de imágenes `mitimiti-backend` | TASK-08 |
+| `EcsStack` | Cluster ECS Fargate, Task Definition y servicio del backend | TASK-08 |
 
 ## Requisitos
 
@@ -214,6 +216,69 @@ Los logs quedan en CloudWatch, en el log group `/mitimiti/db-migration`.
 
 En ECS, la Task Definition tiene que definir `DB_RUN_MIGRATIONS=false` para que el backend
 no ejecute `schema.sql` al arrancar.
+
+## Backend en ECS Fargate (EcrStack + EcsStack)
+
+| Parámetro | Valor |
+|---|---|
+| Cluster | `mitimiti-cluster` (Container Insights activado) |
+| Servicio | `mitimiti-backend`, 2 réplicas en las subredes `app` (una por AZ) |
+| Task Definition | `mitimiti-backend`, 256 CPU / 512 MB, x86_64 |
+| Imagen | `mitimiti-backend:latest` en ECR (tag configurable con `-c imageTag=<tag>`) |
+| Logs | CloudWatch, log group `/mitimiti/ecs/backend`, retención de 30 días |
+| Deploys | Rolling update (50 % / 200 %) con circuit breaker y rollback automático |
+
+Variables que recibe el contenedor:
+
+| Variable | Origen |
+|---|---|
+| `NODE_ENV=production`, `PORT=3000`, `DB_RUN_MIGRATIONS=false`, `DB_SSL=true`, `UPLOADS_DIR=/tmp/uploads` | Texto plano en la Task Definition |
+| `JWT_SECRET`, `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY` | Secreto `mitimiti/app` |
+| `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` | Secreto `mitimiti/db` (claves `host`, `port`, `dbname`, `username`, `password`) |
+
+Los secretos se resuelven cuando arranca cada tarea: no quedan en texto plano en la Task
+Definition ni en la consola. Si se cambia un secreto, hay que forzar un deploy nuevo para
+que las tareas lo tomen.
+
+### Primer despliegue
+
+La imagen tiene que estar en ECR antes de crear el servicio:
+
+```bash
+npx cdk deploy EcrStack
+
+# Subir la primera imagen (después lo hace solo el pipeline de CD)
+REPO=$(aws ecr describe-repositories --repository-names mitimiti-backend \
+  --query "repositories[0].repositoryUri" --output text)
+aws ecr get-login-password | docker login --username AWS --password-stdin ${REPO%%/*}
+docker build --platform linux/amd64 -t $REPO:latest ../backend
+docker push $REPO:latest
+
+npx cdk deploy EcsStack
+```
+
+Verificar que las 2 tareas quedaron corriendo:
+
+```bash
+aws ecs describe-services --cluster mitimiti-cluster --services mitimiti-backend \
+  --query "services[0].[status,runningCount,desiredCount]"
+```
+
+Ver logs en vivo: `aws logs tail /mitimiti/ecs/backend --follow`
+
+### Para el resto del equipo
+
+`EcsStack` expone `cluster`, `taskDefinition`, `service`, `taskRole` y `logGroup`:
+
+- **S3 y Textract (Persona 3):** dar permisos al rol de la tarea desde `bin/mitimiti.ts`,
+  por ejemplo `bucket.grantReadWrite(compute.taskRole)`.
+- **Recordatorios cada 48 hs (Persona 4):** la regla de EventBridge puede lanzar una tarea
+  con la misma `taskDefinition` sobreescribiendo el comando (`node src/scripts/...`).
+  Mientras el cron siga dentro de `app.js`, corre una vez por réplica (2 veces).
+- **Dashboard y alarmas (Persona 5):** usar `compute.service` (métricas de CPU y memoria)
+  y el log group `/mitimiti/ecs/backend`, que ya tiene 30 días de retención.
+- **Pool con SSL (Persona 3, TASK-06):** la tarea ya recibe `DB_SSL=true`. Sin SSL, RDS
+  rechaza la conexión y `/health` responde 503.
 
 ### Orden completo de despliegue
 

@@ -10,4 +10,5 @@ COPY data ./data
 
 EXPOSE 3000
 
-CMD ["npm", "start"]
+# node directo (no "npm start") para que el proceso reciba el SIGTERM de ECS y apague prolijo.
+CMD ["node", "src/app.js"]
