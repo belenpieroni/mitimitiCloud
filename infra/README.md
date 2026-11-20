@@ -12,6 +12,7 @@ Cada stack se despliega por separado y el estado queda en CloudFormation.
 | `EcrStack` | Repositorio de imágenes `mitimiti-backend` | TASK-08 |
 | `EcsStack` | Cluster ECS Fargate, Task Definition y servicio del backend | TASK-08 |
 | `AlbStack` | ALB con health check en `/health` y CloudFront con HTTPS | TASK-09 |
+| `GithubOidcStack` | Proveedor OIDC de GitHub y rol de deploy para el CD | TASK-11 |
 
 ## Requisitos
 
@@ -312,6 +313,47 @@ aws elbv2 describe-target-health --target-group-arn $TG \
 > forzar que todo pase por CloudFront se puede limitar `sg-alb` al prefix list
 > `com.amazonaws.global.cloudfront.origin-facing`.
 
+## Deploy continuo (GithubOidcStack + `.github/workflows/deploy.yml`)
+
+```text
+merge a main ──▶ CI (tests, synth, docker build) ──✅──▶ CD:
+   token OIDC de GitHub ──▶ STS: credenciales temporales del rol mitimiti-github-deploy
+   docker build ──▶ push a ECR (:<sha> y :latest) ──▶ ecs update-service --force-new-deployment
+   ──▶ espera a que las réplicas nuevas pasen el health check
+```
+
+- En GitHub **no hay access keys de AWS**. El rol solo lo puede asumir un workflow del repo
+  `belenpieroni/mitimitiCloud` corriendo sobre `main` (ni forks ni otras ramas).
+- El rol solo puede subir imágenes a `mitimiti-backend` y redeployar el servicio `mitimiti-backend`.
+- El CD solo corre si el CI de ese commit pasó. Si la versión nueva no levanta, el circuit
+  breaker de ECS vuelve a la anterior y el job queda en rojo.
+
+### Configuración (una sola vez)
+
+```bash
+npx cdk deploy GithubOidcStack
+# Si la cuenta ya tenía el proveedor OIDC de GitHub, el deploy falla con "already exists":
+# npx cdk deploy GithubOidcStack -c githubOidcProviderArn=arn:aws:iam::<cuenta>:oidc-provider/token.actions.githubusercontent.com
+```
+
+Copiar el output `DeployRoleArn` en GitHub: **Settings → Secrets and variables → Actions →
+Variables → New repository variable**, nombre `AWS_DEPLOY_ROLE_ARN`. (Es un ARN, no un
+secreto; va como variable.)
+
+### Primera imagen
+
+Antes de que exista `EcsStack`, se puede correr el workflow a mano (**Actions → CD - Deploy a
+ECS → Run workflow**): construye y sube la imagen a ECR y avisa que el servicio todavía no
+existe. Después, `npx cdk deploy AlbStack EcsStack`.
+
+### Saber qué versión está desplegada
+
+```bash
+aws ecr describe-images --repository-name mitimiti-backend \
+  --query "sort_by(imageDetails,&imagePushedAt)[-1].imageTags"
+# ["latest", "<sha del commit>"]
+```
+
 ### Para el resto del equipo
 
 `EcsStack` expone `cluster`, `taskDefinition`, `service`, `taskRole` y `logGroup`:
@@ -333,7 +375,9 @@ aws elbv2 describe-target-health --target-group-arn $TG \
 npx cdk deploy VpcStack SecretsStack RdsStack DbMigrationStack
 aws lambda invoke --function-name mitimiti-db-migration out.json && cat out.json
 
-npx cdk deploy EcrStack
-# subir la primera imagen (ver "Primer despliegue" en ECS) o correr el workflow de CD
+npx cdk deploy EcrStack GithubOidcStack
+# Cargar AWS_DEPLOY_ROLE_ARN en GitHub y correr a mano el workflow de CD (sube la primera imagen)
+
 npx cdk deploy AlbStack EcsStack
+curl -i https://<ApiUrl>/health
 ```
