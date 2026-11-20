@@ -7,6 +7,7 @@ import { RdsStack } from '../lib/rds-stack';
 import { DbMigrationStack } from '../lib/db-migration-stack';
 import { EcrStack } from '../lib/ecr-stack';
 import { EcsStack } from '../lib/ecs-stack';
+import { AlbStack } from '../lib/alb-stack';
 
 const app = new cdk.App();
 
@@ -38,6 +39,12 @@ new DbMigrationStack(app, 'DbMigrationStack', {
 
 export const registry = new EcrStack(app, 'EcrStack', { env });
 
+export const edge = new AlbStack(app, 'AlbStack', {
+  env,
+  vpc: network.vpc,
+  albSecurityGroup: network.albSecurityGroup,
+});
+
 export const compute = new EcsStack(app, 'EcsStack', {
   env,
   vpc: network.vpc,
@@ -45,6 +52,7 @@ export const compute = new EcsStack(app, 'EcsStack', {
   repository: registry.repository,
   appSecret: secrets.appSecret,
   dbSecret: database.dbSecret,
+  targetGroup: edge.targetGroup,
 });
 
 app.synth();
