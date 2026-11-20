@@ -27,4 +27,9 @@ export const config = {
   desiredCount: 2,
   /** Log group de los contenedores del backend. */
   backendLogGroupName: '/mitimiti/ecs/backend',
+
+  /** Repo de GitHub que puede desplegar con OIDC (owner/repo). */
+  githubRepo: 'belenpieroni/mitimitiCloud',
+  /** Única rama que puede desplegar. */
+  githubDeployBranch: 'main',
 };
