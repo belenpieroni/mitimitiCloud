@@ -2,6 +2,7 @@ import * as cdk from 'aws-cdk-lib';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecr from 'aws-cdk-lib/aws-ecr';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
+import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
@@ -16,6 +17,8 @@ export interface EcsStackProps extends cdk.StackProps {
   appSecret: secretsmanager.ISecret;
   /** mitimiti/db: username, password, host, port, dbname (lo genera RDS). */
   dbSecret: secretsmanager.ISecret;
+  /** Target group del ALB (AlbStack). Si se pasa, el servicio se registra en él. */
+  targetGroup?: elbv2.IApplicationTargetGroup;
 }
 
 /**
@@ -111,7 +114,13 @@ export class EcsStack extends cdk.Stack {
       circuitBreaker: { enable: true, rollback: true },
       // Permite `aws ecs execute-command` para debug en la defensa.
       enableExecuteCommand: true,
+      // Tiempo para que Node arranque y conecte a RDS antes de que cuente el health check del ALB.
+      healthCheckGracePeriod: props.targetGroup ? cdk.Duration.seconds(60) : undefined,
     });
+
+    if (props.targetGroup) {
+      this.service.attachToApplicationTargetGroup(props.targetGroup);
+    }
 
     new cdk.CfnOutput(this, 'ClusterName', { value: this.cluster.clusterName });
     new cdk.CfnOutput(this, 'ServiceName', { value: this.service.serviceName });
