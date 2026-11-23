@@ -1,5 +1,6 @@
 const { randomUUID: uuidv4 } = require('crypto');
 const { pool } = require('../db');
+const { generarUrlPrefirmada } = require('../services/s3Service');
 const { notifyUsersByName, NOTIFICATION_CATEGORIES } = require('../services/pushNotificationService');
 
 const limpiarMontoOCR = (montoString) => {
@@ -1113,6 +1114,44 @@ async function eliminarAcuerdo(req, res, next) {
   }
 }
 
+// ─── TICKETS — Generar URL prefirmada para subida a S3 ───────────────────────
+//
+// POST /api/vivienda/tickets/upload-uri
+//
+// El cliente manda: { contentType: 'image/jpeg', fileSize: 1024000 }
+// El backend valida que el usuario esté autenticado (requireAuth ya lo hace en el router)
+// y genera una URL prefirmada de S3.
+//
+// La app luego:
+//   1. Hace PUT a uploadUrl con la imagen
+//   2. Guarda la key para enviarla al endpoint de Textract
+//
+async function generarUploadUri(req, res, next) {
+  try {
+    const { contentType, fileSize } = req.body;
+
+    if (!contentType) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Se requiere el campo "contentType" (ej: "image/jpeg")',
+      });
+    }
+
+    const resultado = await generarUrlPrefirmada({
+      userId: req.user.id,
+      contentType,
+      fileSize: fileSize ? Number(fileSize) : null,
+    });
+
+    return res.status(200).json({
+      ok: true,
+      data: resultado,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   obtenerMiVivienda,
   crearMiVivienda,
@@ -1126,4 +1165,5 @@ module.exports = {
   listarServicios, crearServicio, editarServicio, eliminarServicio, liquidarServicio,
   listarAcuerdos, guardarAcuerdo, editarAcuerdo, eliminarAcuerdo,
   marcarComoPagado, revertirPago,
+  generarUploadUri,
 };

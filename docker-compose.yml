@@ -37,6 +37,10 @@ services:
       DB_USER: ${DB_USER:-mitimiti}
       DB_PASSWORD: ${DB_PASSWORD:-mitimiti_dev}
       UPLOADS_DIR: /app/uploads
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_BUCKET_NAME: ${AWS_BUCKET_NAME:-mitimiti-tickets-dev}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
     volumes:
       - ./backend/src:/app/src
       - ./backend/data:/app/data
