@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import * as cdk from 'aws-cdk-lib';
+import * as iam from 'aws-cdk-lib/aws-iam';
 import { config } from '../lib/config';
 import { VpcStack } from '../lib/vpc-stack';
 import { SecretsStack } from '../lib/secrets-stack';
@@ -61,6 +62,14 @@ export const compute = new EcsStack(app, 'EcsStack', {
 
 // Permisos mínimos de S3 para el backend (generación de URLs prefirmadas y lectura para Textract)
 storage.bucket.grantReadWrite(compute.taskRole);
+
+// Permiso para que el backend pueda invocar Textract AnalyzeExpense sobre los tickets
+compute.taskRole.addToPrincipalPolicy(
+  new iam.PolicyStatement({
+    actions: ['textract:AnalyzeExpense'],
+    resources: ['*'],
+  })
+);
 
 // Pasamos el nombre del bucket como variable de entorno al contenedor de ECS
 compute.container.addEnvironment('AWS_BUCKET_NAME', storage.bucket.bucketName);
