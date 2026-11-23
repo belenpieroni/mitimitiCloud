@@ -16,6 +16,9 @@ router.get('/join/:token/preview', ctrl.previewInvitacion);
 router.post('/join/:token', ctrl.unirseViaToken);
 router.post('/salir', ctrl.salirDeMiVivienda);
 
+
+router.post('/tickets/analizar', ctrl.analizarTicket); // ← Agregá esta línea
+
 router.get('/gastos', ctrl.listarGastos);
 router.post('/gastos', ctrl.crearGasto);
 router.put('/gastos/:id', ctrl.editarGasto);

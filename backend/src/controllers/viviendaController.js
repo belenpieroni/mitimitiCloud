@@ -1,5 +1,6 @@
 const { randomUUID: uuidv4 } = require('crypto');
 const { pool } = require('../db');
+const { analizarTicketS3 } = require('../services/textractService');
 const { notifyUsersByName, NOTIFICATION_CATEGORIES } = require('../services/pushNotificationService');
 
 const limpiarMontoOCR = (montoString) => {
@@ -379,8 +380,6 @@ async function obtenerMiViviendaOrFail(req) {
   return vivienda;
 }
 
-
-
 async function listarGastos(req, res, next) {
   try {
     const vivienda = await obtenerMiViviendaBase(req.user.id);
@@ -589,8 +588,6 @@ async function eliminarGasto(req, res, next) {
     next(err);
   }
 }
-
-
 
 async function listarServicios(req, res, next) {
   try {
@@ -801,8 +798,6 @@ async function eliminarServicio(req, res, next) {
   }
 }
 
-
-
 async function liquidarServicio(req, res, next) {
   const client = await pool.connect();
   try {
@@ -879,8 +874,6 @@ async function liquidarServicio(req, res, next) {
     client.release();
   }
 }
-
-
 
 async function listarAcuerdos(req, res, next) {
   try {
@@ -1113,6 +1106,56 @@ async function eliminarAcuerdo(req, res, next) {
   }
 }
 
+// ─── TICKETS — Análisis inteligente con Amazon Textract ────────────────────────
+//
+// POST /api/vivienda/tickets/analizar
+// Body: { "key": "tickets/usuario-id/foto.jpg" }
+//
+async function analizarTicket(req, res, next) {
+  try {
+    const { key } = req.body;
+
+    if (!key) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Se requiere el campo "key" del objeto en S3',
+      });
+    }
+
+    try {
+      const resultado = await analizarTicketS3(key);
+      return res.status(200).json({
+        ok: true,
+        data: resultado, // { total: number|null, fecha: string|null }
+      });
+    } catch (textractError) {
+      // ─── DEGRADACIÓN ELEGANTE ────────────────────────────────────────────────
+      // Si Textract falla, no enviamos error 500: enviamos total: null
+      // para que el usuario pueda tipear el importe manualmente.
+      if (req.log) {
+        req.log.warn(
+          { err: textractError.message, key },
+          '[Textract] Falló el análisis de ticket. Aplicando degradación elegante a carga manual.'
+        );
+      } else {
+        console.warn(
+          `[Textract] Error analizando key "${key}": ${textractError.message}. Degradando a modo manual.`
+        );
+      }
+
+      return res.status(200).json({
+        ok: true,
+        data: {
+          total: null,
+          fecha: null,
+        },
+      });
+    }
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   obtenerMiVivienda,
   crearMiVivienda,
@@ -1126,4 +1169,5 @@ module.exports = {
   listarServicios, crearServicio, editarServicio, eliminarServicio, liquidarServicio,
   listarAcuerdos, guardarAcuerdo, editarAcuerdo, eliminarAcuerdo,
   marcarComoPagado, revertirPago,
+  analizarTicket,
 };
