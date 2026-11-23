@@ -1,5 +1,6 @@
 function errorHandler(err, req, res, next) {
-  console.error(`[ERROR] ${req.method} ${req.originalUrl} →`, err.message);
+  const log = req.log || require('pino')({ level: 'error' });
+  log.error({ err: err.message, route: req.originalUrl }, 'Unhandled error');
   const status = err.status || 500;
   res.status(status).json({ ok: false, error: err.message || 'Error interno del servidor' });
 }

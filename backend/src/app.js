@@ -1,28 +1,30 @@
 require('dotenv').config();
-const perfilesRoutes = require('./routes/perfiles');
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+
+const healthRouter = require('./routes/health');
 const juntadasRouter = require('./routes/juntadas');
 const perfilesRouter = require('./routes/perfiles');
 const deudasRoutes = require('./routes/deudas');
 const viviendaRouter = require('./routes/vivienda');
 const uploadsRouter = require('./routes/uploads');
+const authRouter = require('./routes/auth');
+
 const { errorHandler, notFound } = require('./middleware/errorHandler');
+const { logger, requestLogger } = require('./middleware/logger');
 const { iniciarCronJobs } = require('./services/cronService');
 const { inicializarDB } = require('./db');
 const { registrarApagado } = require('./shutdown');
-const authRouter = require('./routes/auth');
-const healthRouter = require('./routes/health');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Health check del ALB: va primero, antes de cualquier middleware que pueda fallar.
 app.use('/health', healthRouter);
-
 app.use(cors());
 app.use(express.json());
+app.use(requestLogger);
+
 const uploadsDir = process.env.UPLOADS_DIR || path.join(__dirname, 'uploads');
 app.use('/uploads', express.static(uploadsDir));
 
@@ -34,35 +36,29 @@ app.use('/api/juntadas', juntadasRouter);
 app.use('/api/perfiles', perfilesRouter);
 app.use('/api/deudas', deudasRoutes);
 app.use('/api/vivienda', viviendaRouter);
-app.use('/api/deudas', deudasRoutes);
 app.use('/api/uploads', uploadsRouter);
 app.use('/api/auth', authRouter);
-app.use('/api/perfiles', perfilesRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
 
-app._router.stack.forEach(r => {
+app._router.stack.forEach((r) => {
   if (r.name === 'router') console.log('Router registrado:', r.regexp);
 });
 
 async function start() {
   await inicializarDB();
   const server = app.listen(PORT, () => {
-    console.log(`    Miti Miti backend escuchando en http://localhost:${PORT}`);
-    console.log(`    Docs de endpoints disponibles en /api/juntadas`);
+    logger.info({ port: PORT }, 'Miti Miti backend escuchando');
+    logger.info('Docs de endpoints disponibles en /api/juntadas');
     iniciarCronJobs();
   });
   registrarApagado(server);
 }
 
-// Solo levantamos el servidor si se ejecuta directo (node src/app.js).
-// Así los tests pueden hacer require('./app') y usar Supertest sin abrir el puerto ni el cron.
-if (require.main === module) {
-  start().catch((err) => {
-    console.error('[startup] Error fatal al iniciar el servidor:', err);
-    process.exit(1);
-  });
-}
+start().catch((err) => {
+  logger.error({ err }, '[startup] Error fatal al iniciar el servidor');
+  process.exit(1);
+});
 
 module.exports = app;
