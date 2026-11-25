@@ -32,7 +32,7 @@ router.patch('/servicios/:id/liquidar', ctrl.liquidarServicio);
 router.patch('/:tipo/:id/pagar', ctrl.marcarComoPagado);
 router.patch('/:tipo/:id/revertir', ctrl.revertirPago);
 router.get('/acuerdos', ctrl.listarAcuerdos);
-router.post('/acuerdos', ctrl.crearGasto);
+router.post('/acuerdos', ctrl.guardarAcuerdo);
 router.put('/acuerdos/:id', ctrl.editarAcuerdo);
 router.delete('/acuerdos/:id', ctrl.eliminarAcuerdo);
 
