@@ -16,6 +16,9 @@ router.get('/join/:token/preview', ctrl.previewInvitacion);
 router.post('/join/:token', ctrl.unirseViaToken);
 router.post('/salir', ctrl.salirDeMiVivienda);
 
+// ─── Tickets — generación de URL prefirmada para subida a S3 ─────────────────
+router.post('/tickets/upload-uri', ctrl.generarUploadUri);
+
 router.get('/gastos', ctrl.listarGastos);
 router.post('/gastos', ctrl.crearGasto);
 router.put('/gastos/:id', ctrl.editarGasto);
