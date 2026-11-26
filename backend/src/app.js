@@ -42,11 +42,11 @@ app.use('/api/auth', authRouter);
 app.use(notFound);
 app.use(errorHandler);
 
-app._router.stack.forEach((r) => {
-  if (r.name === 'router') console.log('Router registrado:', r.regexp);
-});
-
 async function start() {
+  app._router.stack.forEach((r) => {
+    if (r.name === 'router') console.log('Router registrado:', r.regexp);
+  });
+
   await inicializarDB();
   const server = app.listen(PORT, () => {
     logger.info({ port: PORT }, 'Miti Miti backend escuchando');
