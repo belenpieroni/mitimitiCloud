@@ -18,10 +18,13 @@ describe('GET /health', () => {
 
   it('responde 503 cuando la base no responde, para que el ALB saque la réplica', async () => {
     jest.spyOn(pool, 'query').mockRejectedValueOnce(new Error('conexión rechazada'));
+    // El backend loguea la falla: la capturamos para verificarla y no ensuciar la salida.
+    const logError = jest.spyOn(console, 'error').mockImplementation(() => {});
 
     const res = await request(app).get('/health');
 
     expect(res.status).toBe(503);
     expect(res.body).toEqual({ status: 'error', db: 'disconnected' });
+    expect(logError).toHaveBeenCalledWith('[health] Base de datos no disponible:', 'conexión rechazada');
   });
 });
