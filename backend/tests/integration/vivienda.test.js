@@ -1,5 +1,6 @@
 const request = require('supertest');
 const app = require('../../src/app');
+const { pool } = require('../../src/db');
 const { crearUsuarioLogueado } = require('../helpers/usuarios');
 
 const auth = (usuario) => ({ Authorization: `Bearer ${usuario.token}` });
@@ -181,6 +182,59 @@ describe('Vivienda: aislamiento entre viviendas', () => {
 
     expect(gasto).toMatchObject({ monto: 1500, status: 'PROCESADO' });
     expect(acuerdos.body.data.map((a) => a.id)).toContain(acuerdoId);
+  });
+
+  describe('acuerdos de otra vivienda', () => {
+    let gastoPropioId;
+    let servicioPropioId;
+
+    beforeAll(async () => {
+      gastoPropioId = (await crearGasto(ajeno)).body.data.id;
+      const acuerdoPropio = await crearAcuerdo(ajeno, 'Acuerdo propio');
+      const servicio = await request(app)
+        .post('/api/vivienda/servicios')
+        .set(auth(ajeno))
+        .send({ acuerdoId: acuerdoPropio, nombreServicio: 'Gas', frecuencia: 'mensual', proximoVencimiento: '2026-12-15', monto: 5000 })
+        .expect(201);
+      servicioPropioId = servicio.body.data.id;
+    });
+
+    const notificacionesDeLaDuenia = async () => {
+      const { rows: [r] } = await pool.query(
+        'SELECT COUNT(*)::int AS c FROM notificaciones_usuario WHERE usuario_id = $1',
+        [duenia.id]
+      );
+      return r.c;
+    };
+
+    it('no puede crear un servicio ni un gasto con el acuerdo de otra vivienda (404)', async () => {
+      const antes = await notificacionesDeLaDuenia();
+
+      const servicio = await request(app)
+        .post('/api/vivienda/servicios')
+        .set(auth(ajeno))
+        .send({ acuerdoId, nombreServicio: 'Servicio ajeno', frecuencia: 'mensual', proximoVencimiento: '2026-12-10', monto: 100 });
+      const gasto = await request(app)
+        .post('/api/vivienda/gastos')
+        .set(auth(ajeno))
+        .send({ acuerdoId, nombreServicio: 'Gasto ajeno', monto: 100, categoria: 'Otros', fecha: '2026-11-20', pagador: ajeno.name });
+
+      expect(servicio.status).toBe(404);
+      expect(gasto.status).toBe(404);
+      // Los participantes del acuerdo ajeno no reciben avisos por registros de otra vivienda.
+      expect(await notificacionesDeLaDuenia()).toBe(antes);
+    });
+
+    it('no puede asociar el acuerdo de otra vivienda al editar sus gastos o servicios (404)', async () => {
+      const gasto = await request(app).put(`/api/vivienda/gastos/${gastoPropioId}`).set(auth(ajeno)).send({ acuerdoId });
+      const servicio = await request(app)
+        .put(`/api/vivienda/servicios/${servicioPropioId}`)
+        .set(auth(ajeno))
+        .send({ acuerdoId });
+
+      expect(gasto.status).toBe(404);
+      expect(servicio.status).toBe(404);
+    });
   });
 
   it('un usuario sin vivienda no puede cargar gastos (404)', async () => {
