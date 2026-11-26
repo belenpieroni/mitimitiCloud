@@ -8,9 +8,11 @@ const FRECUENCIA_MORA_SERVICIOS = 3;
 const FRECUENCIA_MORA_GASTOS = 7;
 
 function getDiffDays(fechaStr) {
-  const targetDate = new Date(fechaStr);
+  // new Date('YYYY-MM-DD') se interpreta como medianoche UTC: en Argentina cae el día anterior.
+  // Armamos la fecha con sus partes para que quede en hora local.
+  const [anio, mes, dia] = String(fechaStr).slice(0, 10).split('-').map(Number);
   const today = new Date();
-  const targetMidnight = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
+  const targetMidnight = new Date(anio, mes - 1, dia);
   const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   return Math.round((targetMidnight - todayMidnight) / (1000 * 60 * 60 * 24));
 }
