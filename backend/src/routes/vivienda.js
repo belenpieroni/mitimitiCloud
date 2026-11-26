@@ -16,8 +16,9 @@ router.get('/join/:token/preview', ctrl.previewInvitacion);
 router.post('/join/:token', ctrl.unirseViaToken);
 router.post('/salir', ctrl.salirDeMiVivienda);
 
-
-router.post('/tickets/analizar', ctrl.analizarTicket); // ← Agregá esta línea
+// ─── Tickets — subida a S3 y análisis con Textract ───────────────────────────
+router.post('/tickets/upload-uri', ctrl.generarUploadUri);
+router.post('/tickets/analizar', ctrl.analizarTicket);
 
 router.get('/gastos', ctrl.listarGastos);
 router.post('/gastos', ctrl.crearGasto);

@@ -1,5 +1,6 @@
 const { randomUUID: uuidv4 } = require('crypto');
 const { pool } = require('../db');
+const { generarUrlPrefirmada } = require('../services/s3Service');
 const { analizarTicketS3 } = require('../services/textractService');
 const { notifyUsersByName, NOTIFICATION_CATEGORIES } = require('../services/pushNotificationService');
 
@@ -1106,6 +1107,44 @@ async function eliminarAcuerdo(req, res, next) {
   }
 }
 
+// ─── TICKETS — Generar URL prefirmada para subida a S3 ───────────────────────
+//
+// POST /api/vivienda/tickets/upload-uri
+//
+// El cliente manda: { contentType: 'image/jpeg', fileSize: 1024000 }
+// El backend valida que el usuario esté autenticado (requireAuth ya lo hace en el router)
+// y genera una URL prefirmada de S3.
+//
+// La app luego:
+//   1. Hace PUT a uploadUrl con la imagen
+//   2. Guarda la key para enviarla al endpoint de Textract
+//
+async function generarUploadUri(req, res, next) {
+  try {
+    const { contentType, fileSize } = req.body;
+
+    if (!contentType) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Se requiere el campo "contentType" (ej: "image/jpeg")',
+      });
+    }
+
+    const resultado = await generarUrlPrefirmada({
+      userId: req.user.id,
+      contentType,
+      fileSize: fileSize ? Number(fileSize) : null,
+    });
+
+    return res.status(200).json({
+      ok: true,
+      data: resultado,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 // ─── TICKETS — Análisis inteligente con Amazon Textract ────────────────────────
 //
 // POST /api/vivienda/tickets/analizar
@@ -1115,15 +1154,40 @@ async function analizarTicket(req, res, next) {
   try {
     const { key } = req.body;
 
-    if (!key) {
+    if (typeof key !== 'string' || !key.trim()) {
       return res.status(400).json({
         ok: false,
         error: 'Se requiere el campo "key" del objeto en S3',
       });
     }
 
+    const cleanKey = key.trim();
+
+    if (!cleanKey.startsWith('tickets/') || cleanKey.includes('..') || cleanKey.includes('\\')) {
+      return res.status(400).json({
+        ok: false,
+        error: 'La key del ticket tiene un formato inválido',
+      });
+    }
+
+    const expectedPrefix = `tickets/${req.user.id}/`;
+    if (!cleanKey.startsWith(expectedPrefix)) {
+      return res.status(403).json({
+        ok: false,
+        error: 'No tenés permiso para analizar este ticket',
+      });
+    }
+
+    const fileName = cleanKey.slice(expectedPrefix.length);
+    if (!fileName || fileName.includes('/') || !/\.(jpe?g|png|webp)$/i.test(fileName)) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Nombre o formato de archivo de ticket inválido',
+      });
+    }
+
     try {
-      const resultado = await analizarTicketS3(key);
+      const resultado = await analizarTicketS3(cleanKey);
       return res.status(200).json({
         ok: true,
         data: resultado, // { total: number|null, fecha: string|null }
@@ -1134,12 +1198,12 @@ async function analizarTicket(req, res, next) {
       // para que el usuario pueda tipear el importe manualmente.
       if (req.log) {
         req.log.warn(
-          { err: textractError.message, key },
+          { err: textractError.message, key: cleanKey },
           '[Textract] Falló el análisis de ticket. Aplicando degradación elegante a carga manual.'
         );
       } else {
         console.warn(
-          `[Textract] Error analizando key "${key}": ${textractError.message}. Degradando a modo manual.`
+          `[Textract] Error analizando key "${cleanKey}": ${textractError.message}. Degradando a modo manual.`
         );
       }
 
@@ -1169,5 +1233,6 @@ module.exports = {
   listarServicios, crearServicio, editarServicio, eliminarServicio, liquidarServicio,
   listarAcuerdos, guardarAcuerdo, editarAcuerdo, eliminarAcuerdo,
   marcarComoPagado, revertirPago,
+  generarUploadUri,
   analizarTicket,
 };
