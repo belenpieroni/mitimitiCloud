@@ -371,9 +371,11 @@ aws ecr describe-images --repository-name mitimiti-backend \
 `EcsStack` expone `cluster`, `taskDefinition`, `service`, `taskRole` y `logGroup`:
 
 - **S3 y Textract (TASK-04, 05, 16):** ya configurado en `bin/mitimiti.ts`: permisos `grantReadWrite` sobre el bucket de tickets, permiso `textract:AnalyzeExpense` en `compute.taskRole` y variable `AWS_BUCKET_NAME` inyectada en el contenedor.
-- **Recordatorios cada 48 hs (Persona 4):** la regla de EventBridge puede lanzar una tarea
-  con la misma `taskDefinition` sobreescribiendo el comando (`node src/scripts/...`).
-  Mientras el cron siga dentro de `app.js`, corre una vez por réplica (2 veces).
+- **Recordatorios cada 48 hs (TASK-21):** el job ya existe como script independiente
+  (`node src/jobs/reminders.js`, TASK-03). La regla de EventBridge puede lanzar una tarea
+  con la misma `taskDefinition` sobreescribiendo el comando. Para que no se dupliquen los
+  avisos, el servicio tiene que recibir `REMINDERS_CRON_ENABLED=false`: si no, el cron de
+  `app.js` corre una vez por réplica (2 veces).
 - **Dashboard y alarmas (Persona 5):** usar `compute.service` (métricas de CPU y memoria),
   `edge.loadBalancer` y `edge.targetGroup` (5XX, latencia, `HealthyHostCount`) y el log
   group `/mitimiti/ecs/backend`, que ya tiene 30 días de retención.
