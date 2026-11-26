@@ -234,13 +234,26 @@ async function checkGastosPendientes() {
   }
 }
 
+/**
+ * Corre una pasada completa de recordatorios. La usan tanto el cron embebido
+ * como el script independiente src/jobs/reminders.js.
+ */
+async function ejecutarRecordatorios() {
+  await resetServiciosVariables();
+  await checkProximosVencimientos();
+  await checkGastosPendientes();
+}
+
 function iniciarCronJobs() {
-  cron.schedule('0 9 * * *', async () => {
-    await resetServiciosVariables();
-    await checkProximosVencimientos();
-    await checkGastosPendientes();
-  }, { timezone: 'America/Argentina/Buenos_Aires' });
+  cron.schedule('0 9 * * *', ejecutarRecordatorios, { timezone: 'America/Argentina/Buenos_Aires' });
   console.log('[cron] Cron de vencimientos, servicios variables y cobranza social iniciado.');
 }
 
-module.exports = { iniciarCronJobs, resetServiciosVariables, calcularProximaFecha, checkProximosVencimientos, checkGastosPendientes };
+module.exports = {
+  iniciarCronJobs,
+  ejecutarRecordatorios,
+  resetServiciosVariables,
+  calcularProximaFecha,
+  checkProximosVencimientos,
+  checkGastosPendientes,
+};
