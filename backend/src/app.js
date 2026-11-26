@@ -51,7 +51,14 @@ async function start() {
   const server = app.listen(PORT, () => {
     logger.info({ port: PORT }, 'Miti Miti backend escuchando');
     logger.info('Docs de endpoints disponibles en /api/juntadas');
-    iniciarCronJobs();
+
+    // Con varias réplicas, el cron embebido enviaría los avisos una vez por réplica.
+    // En ECS se apaga (REMINDERS_CRON_ENABLED=false) y los recordatorios los corre src/jobs/reminders.js.
+    if (process.env.REMINDERS_CRON_ENABLED === 'false') {
+      logger.info('[cron] Cron embebido desactivado: los recordatorios corren como job independiente');
+    } else {
+      iniciarCronJobs();
+    }
   });
   registrarApagado(server);
 }
