@@ -4,6 +4,16 @@ const { crearUsuarioLogueado } = require('../helpers/usuarios');
 
 const auth = (usuario) => ({ Authorization: `Bearer ${usuario.token}` });
 
+// Crea un acuerdo con un único participante (el propio usuario): así crear gastos o
+// servicios no dispara notificaciones a terceros durante los tests.
+async function crearAcuerdo(usuario, nombre = 'Acuerdo test') {
+  const res = await request(app)
+    .post('/api/vivienda/acuerdos')
+    .set(auth(usuario))
+    .send({ nombre, modelo: 'igualitario', participantes: [{ nombre: usuario.name, porcentaje: 100 }] })
+    .expect(201);
+  return res.body.data.id;
+}
 
 async function crearGasto(usuario) {
   const res = await request(app)
@@ -77,5 +87,109 @@ describe('Vivienda: peticiones sin token', () => {
     const res = await request(app).get('/api/vivienda/actual').set('Authorization', 'Bearer token-invalido');
 
     expect(res.status).toBe(401);
+  });
+});
+
+/**
+ * Aislamiento entre viviendas.
+ *
+ * La API no expone rutas para pedir "la vivienda X": todo se resuelve con la vivienda
+ * del usuario del token. Por eso, cuando alguien intenta leer o modificar un recurso de
+ * otra vivienda por su id, la respuesta es 404 (no existe en SU vivienda) y no 403:
+ * así tampoco se revela que el recurso existe.
+ */
+describe('Vivienda: aislamiento entre viviendas', () => {
+  let duenia;
+  let ajeno;
+  let gastoId;
+  let servicioId;
+  let acuerdoId;
+
+  beforeAll(async () => {
+    duenia = await crearUsuarioLogueado('Duenia');
+    ajeno = await crearUsuarioLogueado('Ajeno');
+
+    await request(app).post('/api/vivienda/crear').set(auth(duenia)).send({ nombre: 'Casa privada' }).expect(201);
+    await request(app).post('/api/vivienda/crear').set(auth(ajeno)).send({ nombre: 'Casa ajena' }).expect(201);
+
+    gastoId = (await crearGasto(duenia)).body.data.id;
+    acuerdoId = await crearAcuerdo(duenia);
+    const servicio = await request(app)
+      .post('/api/vivienda/servicios')
+      .set(auth(duenia))
+      .send({ acuerdoId, nombreServicio: 'Internet', frecuencia: 'mensual', proximoVencimiento: '2026-12-10', monto: 9000 })
+      .expect(201);
+    servicioId = servicio.body.data.id;
+  });
+
+  it('cada usuario solo ve su propia vivienda', async () => {
+    const res = await request(app).get('/api/vivienda/actual').set(auth(ajeno));
+
+    expect(res.body.data.nombre).toBe('Casa ajena');
+    expect(res.body.data.miembros.map((m) => m.id)).not.toContain(duenia.id);
+  });
+
+  it('los listados no incluyen gastos, servicios ni acuerdos de otra vivienda', async () => {
+    const [gastos, servicios, acuerdos] = await Promise.all(
+      ['gastos', 'servicios', 'acuerdos'].map((r) => request(app).get(`/api/vivienda/${r}`).set(auth(ajeno)))
+    );
+
+    expect(gastos.body.data.map((g) => g.id)).not.toContain(gastoId);
+    expect(servicios.body.data.map((s) => s.id)).not.toContain(servicioId);
+    expect(acuerdos.body.data.map((a) => a.id)).not.toContain(acuerdoId);
+  });
+
+  it('no puede editar ni borrar un gasto ajeno (404)', async () => {
+    const editar = await request(app).put(`/api/vivienda/gastos/${gastoId}`).set(auth(ajeno)).send({ monto: 1 });
+    const borrar = await request(app).delete(`/api/vivienda/gastos/${gastoId}`).set(auth(ajeno));
+
+    expect(editar.status).toBe(404);
+    expect(borrar.status).toBe(404);
+  });
+
+  it('no puede editar ni borrar un servicio ajeno (404)', async () => {
+    const editar = await request(app).put(`/api/vivienda/servicios/${servicioId}`).set(auth(ajeno)).send({ monto: 1 });
+    const borrar = await request(app).delete(`/api/vivienda/servicios/${servicioId}`).set(auth(ajeno));
+
+    expect(editar.status).toBe(404);
+    expect(borrar.status).toBe(404);
+  });
+
+  it('no puede marcar como pagado ni revertir un gasto ajeno (404)', async () => {
+    const pagar = await request(app).patch(`/api/vivienda/gastos/${gastoId}/pagar`).set(auth(ajeno));
+    const revertir = await request(app).patch(`/api/vivienda/gastos/${gastoId}/revertir`).set(auth(ajeno));
+
+    expect(pagar.status).toBe(404);
+    expect(revertir.status).toBe(404);
+  });
+
+  it('no puede editar ni eliminar un acuerdo ajeno (404)', async () => {
+    const editar = await request(app)
+      .put(`/api/vivienda/acuerdos/${acuerdoId}`)
+      .set(auth(ajeno))
+      .send({ nombre: 'Hackeado', modelo: 'igualitario', participantes: [] });
+    const borrar = await request(app).delete(`/api/vivienda/acuerdos/${acuerdoId}`).set(auth(ajeno));
+
+    expect(editar.status).toBe(404);
+    expect(borrar.status).toBe(404);
+  });
+
+  it('después de los intentos, los datos de la dueña siguen intactos', async () => {
+    const gastos = await request(app).get('/api/vivienda/gastos').set(auth(duenia));
+    const gasto = gastos.body.data.find((g) => g.id === gastoId);
+    const acuerdos = await request(app).get('/api/vivienda/acuerdos').set(auth(duenia));
+
+    expect(gasto).toMatchObject({ monto: 1500, status: 'PROCESADO' });
+    expect(acuerdos.body.data.map((a) => a.id)).toContain(acuerdoId);
+  });
+
+  it('un usuario sin vivienda no puede cargar gastos (404)', async () => {
+    const sinVivienda = await crearUsuarioLogueado('Sin vivienda');
+
+    const actual = await request(app).get('/api/vivienda/actual').set(auth(sinVivienda));
+    const gasto = await crearGasto(sinVivienda);
+
+    expect(actual.body.data).toBeNull();
+    expect(gasto.status).toBe(404);
   });
 });
