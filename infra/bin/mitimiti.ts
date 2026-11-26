@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import * as cdk from 'aws-cdk-lib';
+import * as iam from 'aws-cdk-lib/aws-iam';
 import { config } from '../lib/config';
 import { VpcStack } from '../lib/vpc-stack';
 import { SecretsStack } from '../lib/secrets-stack';
@@ -9,6 +10,7 @@ import { EcrStack } from '../lib/ecr-stack';
 import { EcsStack } from '../lib/ecs-stack';
 import { AlbStack } from '../lib/alb-stack';
 import { GithubOidcStack } from '../lib/github-oidc-stack';
+import { S3Stack } from '../lib/s3-stack';
 
 const app = new cdk.App();
 
@@ -46,6 +48,8 @@ export const edge = new AlbStack(app, 'AlbStack', {
   albSecurityGroup: network.albSecurityGroup,
 });
 
+export const storage = new S3Stack(app, 'S3Stack', { env });
+
 export const compute = new EcsStack(app, 'EcsStack', {
   env,
   vpc: network.vpc,
@@ -55,6 +59,20 @@ export const compute = new EcsStack(app, 'EcsStack', {
   dbSecret: database.dbSecret,
   targetGroup: edge.targetGroup,
 });
+
+// Permisos mínimos de S3 para el backend (generación de URLs prefirmadas y lectura para Textract)
+storage.bucket.grantReadWrite(compute.taskRole);
+
+// Permiso para que el backend pueda invocar Textract AnalyzeExpense sobre los tickets
+compute.taskRole.addToPrincipalPolicy(
+  new iam.PolicyStatement({
+    actions: ['textract:AnalyzeExpense'],
+    resources: ['*'],
+  })
+);
+
+// Pasamos el nombre del bucket como variable de entorno al contenedor de ECS
+compute.container.addEnvironment('AWS_BUCKET_NAME', storage.bucket.bucketName);
 
 new GithubOidcStack(app, 'GithubOidcStack', {
   env,

@@ -57,7 +57,9 @@ export class DbMigrationStack extends cdk.Stack {
           beforeBundling: () => [],
           beforeInstall: () => [],
           afterBundling: (_inputDir: string, outputDir: string) => [
-            `cp "${schemaPath}" "${outputDir}/schema.sql"`,
+            process.platform === 'win32'
+              ? `copy "${schemaPath}" "${outputDir}\\schema.sql"`
+              : `cp "${schemaPath}" "${outputDir}/schema.sql"`,
           ],
         },
       },

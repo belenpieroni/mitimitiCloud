@@ -12,6 +12,7 @@ Cada stack se despliega por separado y el estado queda en CloudFormation.
 | `EcrStack` | Repositorio de imágenes `mitimiti-backend` | TASK-08 |
 | `EcsStack` | Cluster ECS Fargate, Task Definition y servicio del backend | TASK-08 |
 | `AlbStack` | ALB con health check en `/health` y CloudFront con HTTPS | TASK-09 |
+| `S3Stack` | Bucket S3 privado para tickets y comprobantes | TASK-16 |
 | `GithubOidcStack` | Proveedor OIDC de GitHub y rol de deploy para el CD | TASK-11 |
 
 ## Requisitos
@@ -313,6 +314,17 @@ aws elbv2 describe-target-health --target-group-arn $TG \
 > forzar que todo pase por CloudFront se puede limitar `sg-alb` al prefix list
 > `com.amazonaws.global.cloudfront.origin-facing`.
 
+## Almacenamiento de tickets (S3Stack)
+
+Bucket privado para guardar las fotos de tickets y comprobantes sin pasar por el backend:
+
+- **Nombre:** `mitimiti-tickets-<account>` (aislado y único globalmente).
+- **Block Public Access:** bloquea todo acceso público a nivel bucket y objetos.
+- **Cifrado en reposo:** `S3_MANAGED` (AES-256).
+- **Cifrado en tránsito:** `enforceSSL: true` rechaza conexiones HTTP sin TLS.
+- **CORS:** permite peticiones directas `PUT` (subida vía URL prefirmada) y `GET` desde la app móvil.
+- **Permisos mínimos:** exporta su ARN (`mitimiti-tickets-bucket-arn`) y en `bin/mitimiti.ts` otorga `grantReadWrite` únicamente al `taskRole` de ECS Fargate, inyectando `AWS_BUCKET_NAME` en el contenedor.
+
 ## Deploy continuo (GithubOidcStack + `.github/workflows/deploy.yml`)
 
 ```text
@@ -358,21 +370,19 @@ aws ecr describe-images --repository-name mitimiti-backend \
 
 `EcsStack` expone `cluster`, `taskDefinition`, `service`, `taskRole` y `logGroup`:
 
-- **S3 y Textract (Persona 3):** dar permisos al rol de la tarea desde `bin/mitimiti.ts`,
-  por ejemplo `bucket.grantReadWrite(compute.taskRole)`.
+- **S3 y Textract (TASK-04, 05, 16):** ya configurado en `bin/mitimiti.ts`: permisos `grantReadWrite` sobre el bucket de tickets, permiso `textract:AnalyzeExpense` en `compute.taskRole` y variable `AWS_BUCKET_NAME` inyectada en el contenedor.
 - **Recordatorios cada 48 hs (Persona 4):** la regla de EventBridge puede lanzar una tarea
   con la misma `taskDefinition` sobreescribiendo el comando (`node src/scripts/...`).
   Mientras el cron siga dentro de `app.js`, corre una vez por réplica (2 veces).
 - **Dashboard y alarmas (Persona 5):** usar `compute.service` (métricas de CPU y memoria),
   `edge.loadBalancer` y `edge.targetGroup` (5XX, latencia, `HealthyHostCount`) y el log
   group `/mitimiti/ecs/backend`, que ya tiene 30 días de retención.
-- **Pool con SSL (Persona 3, TASK-06):** la tarea ya recibe `DB_SSL=true`. Sin SSL, RDS
-  rechaza la conexión y `/health` responde 503.
+- **Pool con SSL (TASK-06):** el backend ya conecta con `ssl: { rejectUnauthorized: false }` y `max: 15` cuando recibe `DB_SSL=true`. Sin SSL, RDS rechaza la conexión y `/health` responde 503.
 
 ### Orden completo de despliegue
 
 ```bash
-npx cdk deploy VpcStack SecretsStack RdsStack DbMigrationStack
+npx cdk deploy VpcStack SecretsStack RdsStack DbMigrationStack S3Stack
 aws lambda invoke --function-name mitimiti-db-migration out.json && cat out.json
 
 npx cdk deploy EcrStack GithubOidcStack
