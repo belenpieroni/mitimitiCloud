@@ -108,6 +108,25 @@ El seed es idempotente (`ON CONFLICT DO NOTHING`), podés correrlo varias veces 
 
 Las imágenes de tickets OCR se guardan en el volumen Docker `uploads` y la URL se persiste en la columna `imagen_url` de `vivienda_gastos`.
 
+## Tests de integración del backend
+
+Los tests usan Jest + Supertest: importan la app sin levantar el servidor y le pegan contra un PostgreSQL real.
+
+```bash
+# 1. Levantá solo la base (queda en el puerto 5433)
+docker compose up -d db
+
+# 2. Corré la suite
+cd backend
+npm install
+npm run test:integration
+```
+
+- En local los tests usan una base aparte, `mitimiti_test`, que se crea sola y no toca los datos de desarrollo.
+- Antes de la suite se aplica `schema.sql` automáticamente.
+- En CI corren en cada push con `npm test`, contra el servicio `postgres` del workflow.
+- Se puede apuntar a otra base con las variables `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER` y `DB_PASSWORD`.
+
 ## Flujo Completo
 
 1. Levantá ambos servicios:

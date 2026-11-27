@@ -42,11 +42,11 @@ app.use('/api/auth', authRouter);
 app.use(notFound);
 app.use(errorHandler);
 
-app._router.stack.forEach((r) => {
-  if (r.name === 'router') console.log('Router registrado:', r.regexp);
-});
-
 async function start() {
+  app._router.stack.forEach((r) => {
+    if (r.name === 'router') console.log('Router registrado:', r.regexp);
+  });
+
   await inicializarDB();
   const server = app.listen(PORT, () => {
     logger.info({ port: PORT }, 'Miti Miti backend escuchando');
@@ -56,9 +56,13 @@ async function start() {
   registrarApagado(server);
 }
 
-start().catch((err) => {
-  logger.error({ err }, '[startup] Error fatal al iniciar el servidor');
-  process.exit(1);
-});
+// Solo levantamos el servidor si se ejecuta directo (node src/app.js).
+// Así los tests pueden hacer require('./app') con Supertest sin abrir el puerto ni arrancar el cron.
+if (require.main === module) {
+  start().catch((err) => {
+    logger.error({ err }, '[startup] Error fatal al iniciar el servidor');
+    process.exit(1);
+  });
+}
 
 module.exports = app;

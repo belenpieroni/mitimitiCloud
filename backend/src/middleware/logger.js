@@ -1,5 +1,5 @@
 const pino = require('pino');
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID: uuidv4 } = require('crypto');
 
 // 1. Instancia de Pino con redacción de datos sensibles y level en texto
 const logger = pino({

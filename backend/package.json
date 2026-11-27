@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node src/app.js",
     "dev": "nodemon src/app.js",
-    "seed": "node src/migrations/seed.js"
+    "seed": "node src/migrations/seed.js",
+    "test": "npm run test:integration",
+    "test:integration": "jest --runInBand"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1175.0",
@@ -27,11 +29,12 @@
     "pdfjs-dist": "^4.0.0",
     "pg": "^8.22.0",
     "pino": "^10.4.0",
-    "tesseract.js": "^5.1.1",
-    "uuid": "^14.0.3"
+    "tesseract.js": "^5.1.1"
   },
   "devDependencies": {
-    "nodemon": "^3.0.2"
+    "jest": "^30.5.2",
+    "nodemon": "^3.0.2",
+    "supertest": "^7.3.2"
   },
   "engines": {
     "node": ">=18.0.0"
