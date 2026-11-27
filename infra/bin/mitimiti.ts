@@ -57,6 +57,7 @@ export const compute = new EcsStack(app, 'EcsStack', {
   repository: registry.repository,
   appSecret: secrets.appSecret,
   dbSecret: database.dbSecret,
+  debugSecret: secrets.debugSecret,
   targetGroup: edge.targetGroup,
 });
 

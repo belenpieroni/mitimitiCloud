@@ -127,6 +127,45 @@ npm run test:integration
 - En CI corren en cada push con `npm test`, contra el servicio `postgres` del workflow.
 - Se puede apuntar a otra base con las variables `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER` y `DB_PASSWORD`.
 
+## Demo de observabilidad
+
+`GET /api/debug/error-500` responde 500 a propósito para mostrar los logs y la alarma de 5xx.
+Solo funciona si el backend tiene `DEBUG_ERROR_TOKEN` y el request manda ese valor en el header
+`x-debug-token`. Si falta la variable o el token no coincide, responde 404 como cualquier ruta inexistente.
+
+En AWS el token lo genera CDK en el secreto `mitimiti/debug` y ECS lo inyecta en la tarea:
+
+```bash
+TOKEN=$(aws secretsmanager get-secret-value --secret-id mitimiti/debug \
+  --query SecretString --output text | jq -r .DEBUG_ERROR_TOKEN)
+API=$(aws cloudformation describe-stacks --stack-name AlbStack \
+  --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" --output text)
+```
+
+Disparar errores para la alarma de 5xx (cada request lleva un `x-request-id` conocido):
+
+```bash
+for i in $(seq 1 20); do
+  curl -s -o /dev/null -w "%{http_code} " \
+    -H "x-debug-token: $TOKEN" -H "x-request-id: demo-500-$i" \
+    "$API/api/debug/error-500"
+  sleep 2
+done
+```
+
+Buscar un request en CloudWatch Logs Insights, sobre el log group `/mitimiti/ecs/backend`:
+
+```text
+fields @timestamp, level, msg, err, route, statusCode
+| filter requestId = "demo-500-1"
+| sort @timestamp asc
+```
+
+Aparecen dos eventos: `Unhandled error` con `err: "[debug] Error 500 simulado"` (del errorHandler)
+y `Request failed` con `statusCode: 500` (del logger de requests).
+
+En local: definí `DEBUG_ERROR_TOKEN` en `.env` antes de `docker compose up` y usá `http://localhost:3000`.
+
 ## Flujo Completo
 
 1. Levantá ambos servicios:
