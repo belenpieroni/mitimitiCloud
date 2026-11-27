@@ -381,6 +381,20 @@ async function obtenerMiViviendaOrFail(req) {
   return vivienda;
 }
 
+// Un acuerdo solo puede usarse dentro de su vivienda: sin esta validación, un usuario podía
+// asociar el acuerdo de otra vivienda, copiar sus participantes y enviarles notificaciones.
+async function validarAcuerdoDeVivienda(acuerdoId, viviendaId) {
+  const { rowCount } = await pool.query(
+    'SELECT 1 FROM vivienda_acuerdos WHERE id = $1 AND vivienda_id = $2',
+    [acuerdoId, viviendaId]
+  );
+  if (rowCount === 0) {
+    const err = new Error('Acuerdo no encontrado');
+    err.status = 404;
+    throw err;
+  }
+}
+
 async function listarGastos(req, res, next) {
   try {
     const vivienda = await obtenerMiViviendaBase(req.user.id);
@@ -436,6 +450,7 @@ async function crearGasto(req, res, next) {
 
     let participantesFinales = [];
     if (acuerdoId) {
+      await validarAcuerdoDeVivienda(acuerdoId, vivienda.id);
       const { rows: partRows } = await pool.query(
         'SELECT nombre, porcentaje FROM acuerdo_participantes WHERE acuerdo_id = $1',
         [acuerdoId]
@@ -521,6 +536,7 @@ async function editarGasto(req, res, next) {
 
     let participantesFinales = undefined;
     if (acuerdoId) {
+      await validarAcuerdoDeVivienda(acuerdoId, vivienda.id);
       const { rows: partRows } = await pool.query(
         'SELECT nombre FROM acuerdo_participantes WHERE acuerdo_id = $1',
         [acuerdoId]
@@ -650,6 +666,7 @@ async function crearServicio(req, res, next) {
       err.status = 400; return next(err);
     }
 
+    await validarAcuerdoDeVivienda(acuerdoId, vivienda.id);
     const { rows: partRows } = await pool.query(
       'SELECT nombre, porcentaje FROM acuerdo_participantes WHERE acuerdo_id = $1',
       [acuerdoId]
@@ -724,6 +741,7 @@ async function editarServicio(req, res, next) {
 
     let participantesFinales = undefined;
     if (acuerdoId) {
+      await validarAcuerdoDeVivienda(acuerdoId, vivienda.id);
       const { rows: partRows } = await pool.query(
         'SELECT nombre FROM acuerdo_participantes WHERE acuerdo_id = $1',
         [acuerdoId]
