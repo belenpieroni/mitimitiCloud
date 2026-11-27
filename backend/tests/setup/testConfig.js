@@ -19,6 +19,12 @@ const DEFAULTS = {
   DB_USER: 'mitimiti',
   DB_PASSWORD: 'mitimiti_dev',
   UPLOADS_DIR: path.join(os.tmpdir(), 'mitimiti-test-uploads'),
+  // AWS ficticio: firmar URLs prefirmadas no llama a AWS y Textract se simula en los tests,
+  // así que la suite nunca toca una cuenta real.
+  AWS_REGION: 'us-east-1',
+  AWS_BUCKET_NAME: 'mitimiti-tickets-test',
+  AWS_ACCESS_KEY_ID: 'AKIATESTFICTICIO',
+  AWS_SECRET_ACCESS_KEY: 'clave-ficticia-solo-tests',
 };
 
 function aplicarDefaults() {
