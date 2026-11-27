@@ -8,9 +8,11 @@ const FRECUENCIA_MORA_SERVICIOS = 3;
 const FRECUENCIA_MORA_GASTOS = 7;
 
 function getDiffDays(fechaStr) {
-  const targetDate = new Date(fechaStr);
+  // new Date('YYYY-MM-DD') se interpreta como medianoche UTC: en Argentina cae el día anterior.
+  // Armamos la fecha con sus partes para que quede en hora local.
+  const [anio, mes, dia] = String(fechaStr).slice(0, 10).split('-').map(Number);
   const today = new Date();
-  const targetMidnight = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
+  const targetMidnight = new Date(anio, mes - 1, dia);
   const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   return Math.round((targetMidnight - todayMidnight) / (1000 * 60 * 60 * 24));
 }
@@ -234,13 +236,26 @@ async function checkGastosPendientes() {
   }
 }
 
+/**
+ * Corre una pasada completa de recordatorios. La usan tanto el cron embebido
+ * como el script independiente src/jobs/reminders.js.
+ */
+async function ejecutarRecordatorios() {
+  await resetServiciosVariables();
+  await checkProximosVencimientos();
+  await checkGastosPendientes();
+}
+
 function iniciarCronJobs() {
-  cron.schedule('0 9 * * *', async () => {
-    await resetServiciosVariables();
-    await checkProximosVencimientos();
-    await checkGastosPendientes();
-  }, { timezone: 'America/Argentina/Buenos_Aires' });
+  cron.schedule('0 9 * * *', ejecutarRecordatorios, { timezone: 'America/Argentina/Buenos_Aires' });
   console.log('[cron] Cron de vencimientos, servicios variables y cobranza social iniciado.');
 }
 
-module.exports = { iniciarCronJobs, resetServiciosVariables, calcularProximaFecha, checkProximosVencimientos, checkGastosPendientes };
+module.exports = {
+  iniciarCronJobs,
+  ejecutarRecordatorios,
+  resetServiciosVariables,
+  calcularProximaFecha,
+  checkProximosVencimientos,
+  checkGastosPendientes,
+};

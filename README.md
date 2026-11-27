@@ -203,6 +203,19 @@ cd backend && npm install
 	- Nuevas juntadas
 - El backend persiste estas preferencias por usuario y bloquea futuros envios de categorias desactivadas.
 
+### Job de recordatorios
+
+Los recordatorios (vencimientos de servicios, servicios variables y gastos pendientes) también se pueden correr como un script que hace una pasada y termina:
+
+```bash
+cd backend
+npm run job:reminders     # equivalente a: node src/jobs/reminders.js
+```
+
+- Termina con código `0` si todo salió bien y `1` si la base no está disponible o algo falla.
+- Un recordatorio no se envía dos veces el mismo día aunque el job corra varias veces.
+- Por defecto la API sigue corriendo el cron todos los días a las 9 (hora de Argentina). Con `REMINDERS_CRON_ENABLED=false` la API no lo inicia: es lo que se usa en ECS, donde hay varias réplicas y los recordatorios los dispara una tarea programada.
+
 4. Nota importante sobre Expo Go:
 
 - En SDK 53+ de Expo, las notificaciones push remotas no funcionan completas en Expo Go.

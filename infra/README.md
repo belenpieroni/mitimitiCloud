@@ -13,6 +13,7 @@ Cada stack se despliega por separado y el estado queda en CloudFormation.
 | `EcsStack` | Cluster ECS Fargate, Task Definition y servicio del backend | TASK-08 |
 | `AlbStack` | ALB con health check en `/health` y CloudFront con HTTPS | TASK-09 |
 | `S3Stack` | Bucket S3 privado para tickets y comprobantes | TASK-16 |
+| `RemindersStack` | Regla de EventBridge que lanza el job de recordatorios cada 48 hs | TASK-21 |
 | `GithubOidcStack` | Proveedor OIDC de GitHub y rol de deploy para el CD | TASK-11 |
 
 ## Requisitos
@@ -235,7 +236,7 @@ Variables que recibe el contenedor:
 
 | Variable | Origen |
 |---|---|
-| `NODE_ENV=production`, `PORT=3000`, `DB_RUN_MIGRATIONS=false`, `DB_SSL=true`, `UPLOADS_DIR=/tmp/uploads` | Texto plano en la Task Definition |
+| `NODE_ENV=production`, `PORT=3000`, `DB_RUN_MIGRATIONS=false`, `DB_SSL=true`, `UPLOADS_DIR=/tmp/uploads`, `REMINDERS_CRON_ENABLED=false` | Texto plano en la Task Definition |
 | `JWT_SECRET`, `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY` | Secreto `mitimiti/app` |
 | `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` | Secreto `mitimiti/db` (claves `host`, `port`, `dbname`, `username`, `password`) |
 
@@ -325,6 +326,49 @@ Bucket privado para guardar las fotos de tickets y comprobantes sin pasar por el
 - **CORS:** permite peticiones directas `PUT` (subida vía URL prefirmada) y `GET` desde la app móvil.
 - **Permisos mínimos:** exporta su ARN (`mitimiti-tickets-bucket-arn`) y en `bin/mitimiti.ts` otorga `grantReadWrite` únicamente al `taskRole` de ECS Fargate, inyectando `AWS_BUCKET_NAME` en el contenedor.
 
+## Recordatorios programados (RemindersStack)
+
+```text
+EventBridge (cada 48 hs) ──▶ tarea efímera de Fargate (Task Definition del backend)
+   comando: node src/jobs/reminders.js ──▶ RDS + push ──▶ exit 0 ──▶ la tarea se apaga
+```
+
+- La regla `mitimiti-reminders` usa `Schedule.rate(Duration.hours(48))` (en la consola figura
+  como `rate(2 days)`). El intervalo se cambia en `remindersEveryHours` de `lib/config.ts`.
+- La tarea usa la misma imagen, secretos, subredes `app` y security group que el servicio,
+  pero sobrescribe el comando: no levanta el servidor, hace una pasada y termina.
+- Corre **una sola vez** por disparo. Las réplicas del servicio reciben
+  `REMINDERS_CRON_ENABLED=false`, así que ya no corren el cron dentro de la API.
+- Si EventBridge no logra lanzar la tarea, reintenta 2 veces durante una hora.
+- El rol de EventBridge solo puede ejecutar esa Task Definition en `mitimiti-cluster`.
+- Los logs del job quedan en `/mitimiti/ecs/backend`, igual que los del servicio.
+
+```bash
+npx cdk deploy EcsStack RemindersStack
+```
+
+Para probarlo sin esperar 48 hs, lanzar la tarea a mano con el mismo override de comando:
+
+```bash
+SUBNETS=$(aws ec2 describe-subnets --filters "Name=tag:aws-cdk:subnet-name,Values=app" \
+  --query "Subnets[].SubnetId" --output text | tr '\t' ',')
+SG=$(aws ec2 describe-security-groups --filters "Name=group-name,Values=mitimiti-ecs-sg" \
+  --query "SecurityGroups[0].GroupId" --output text)
+
+aws ecs run-task --cluster mitimiti-cluster --launch-type FARGATE --task-definition mitimiti-backend \
+  --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SG],assignPublicIp=DISABLED}" \
+  --overrides '{"containerOverrides":[{"name":"backend","command":["node","src/jobs/reminders.js"]}]}'
+
+aws logs tail /mitimiti/ecs/backend --since 10m --follow
+# [reminders] Iniciando job de recordatorios ... [reminders] Job de recordatorios finalizado
+```
+
+La tarea tiene que terminar con `exitCode: 0`
+(`aws ecs describe-tasks --cluster mitimiti-cluster --tasks <taskArn> --query "tasks[0].containers[0].exitCode"`).
+
+> En Windows, si `cdk synth` se queda sin memoria, se puede sintetizar sin el chequeo de tipos
+> (lo cubre `npm run build`): `npx cdk synth --app "npx ts-node --transpile-only --prefer-ts-exts bin/mitimiti.ts"`.
+
 ## Deploy continuo (GithubOidcStack + `.github/workflows/deploy.yml`)
 
 ```text
@@ -371,9 +415,9 @@ aws ecr describe-images --repository-name mitimiti-backend \
 `EcsStack` expone `cluster`, `taskDefinition`, `service`, `taskRole` y `logGroup`:
 
 - **S3 y Textract (TASK-04, 05, 16):** ya configurado en `bin/mitimiti.ts`: permisos `grantReadWrite` sobre el bucket de tickets, permiso `textract:AnalyzeExpense` en `compute.taskRole` y variable `AWS_BUCKET_NAME` inyectada en el contenedor.
-- **Recordatorios cada 48 hs (Persona 4):** la regla de EventBridge puede lanzar una tarea
-  con la misma `taskDefinition` sobreescribiendo el comando (`node src/scripts/...`).
-  Mientras el cron siga dentro de `app.js`, corre una vez por réplica (2 veces).
+- **Recordatorios cada 48 hs (TASK-03 y TASK-21):** ya configurado en `RemindersStack`: EventBridge
+  lanza `node src/jobs/reminders.js` como tarea efímera con la misma `taskDefinition`, y el
+  servicio recibe `REMINDERS_CRON_ENABLED=false` para no duplicar avisos.
 - **Dashboard y alarmas (Persona 5):** usar `compute.service` (métricas de CPU y memoria),
   `edge.loadBalancer` y `edge.targetGroup` (5XX, latencia, `HealthyHostCount`) y el log
   group `/mitimiti/ecs/backend`, que ya tiene 30 días de retención.
@@ -388,6 +432,6 @@ aws lambda invoke --function-name mitimiti-db-migration out.json && cat out.json
 npx cdk deploy EcrStack GithubOidcStack
 # Cargar AWS_DEPLOY_ROLE_ARN en GitHub y correr a mano el workflow de CD (sube la primera imagen)
 
-npx cdk deploy AlbStack EcsStack
+npx cdk deploy AlbStack EcsStack RemindersStack
 curl -i https://<ApiUrl>/health
 ```
