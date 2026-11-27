@@ -83,6 +83,9 @@ export class EcsStack extends cdk.Stack {
         // RDS PostgreSQL 16 exige SSL. El pool lo lee en TASK-06 (MT-10).
         DB_SSL: 'true',
         UPLOADS_DIR: '/tmp/uploads',
+        // Los recordatorios los lanza EventBridge como tarea aparte (RemindersStack):
+        // si el cron siguiera dentro de la API, cada réplica enviaría los mismos avisos.
+        REMINDERS_CRON_ENABLED: 'false',
       },
       secrets: {
         JWT_SECRET: ecs.Secret.fromSecretsManager(props.appSecret, 'JWT_SECRET'),
