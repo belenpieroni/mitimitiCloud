@@ -37,6 +37,13 @@ export class GithubOidcStack extends cdk.Stack {
           clientIds: ['sts.amazonaws.com'],
         });
 
+    // Formato inmutable del sub (activado en el repo): incluye los IDs numéricos, así un repo
+    // recreado con el mismo nombre no puede asumir el rol.
+    const [githubOwner, githubRepoName] = config.githubRepo.split('/');
+    const githubSub =
+      `repo:${githubOwner}@${config.githubOwnerId}/${githubRepoName}@${config.githubRepoId}` +
+      `:ref:refs/heads/${config.githubDeployBranch}`;
+
     this.deployRole = new iam.Role(this, 'DeployRole', {
       roleName: `${config.project}-github-deploy`,
       description: `Deploy del backend desde GitHub Actions (${config.githubRepo}, rama ${config.githubDeployBranch})`,
@@ -45,7 +52,7 @@ export class GithubOidcStack extends cdk.Stack {
         StringEquals: {
           'token.actions.githubusercontent.com:aud': 'sts.amazonaws.com',
           // Solo corridas del repo del equipo sobre main: un fork o una rama cualquiera no puede asumirlo.
-          'token.actions.githubusercontent.com:sub': `repo:${config.githubRepo}:ref:refs/heads/${config.githubDeployBranch}`,
+          'token.actions.githubusercontent.com:sub': githubSub,
         },
       }),
     });

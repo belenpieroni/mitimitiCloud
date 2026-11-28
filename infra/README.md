@@ -232,6 +232,11 @@ no ejecute `schema.sql` al arrancar.
 | Logs | CloudWatch, log group `/mitimiti/ecs/backend`, retención de 30 días |
 | Deploys | Rolling update (50 % / 200 %) con circuit breaker y rollback automático |
 
+> **Log group de la API (MT-27):** la API loguea en `/mitimiti/ecs/backend` y no en
+> `/mitimiti/api`, como decía el criterio original. Se mantuvo el nombre existente porque
+> renombrarlo obliga a CloudFormation a reemplazar el log group y borrar los logs. El job de
+> recordatorios (Lambda) loguea en `/mitimiti/job`. Los dos tienen 30 días de retención.
+
 Variables que recibe el contenedor:
 
 | Variable | Origen |
@@ -383,6 +388,13 @@ merge a main ──▶ CI (tests, synth, docker build) ──✅──▶ CD:
 
 - En GitHub **no hay access keys de AWS**. El rol solo lo puede asumir un workflow del repo
   `belenpieroni/mitimitiCloud` corriendo sobre `main` (ni forks ni otras ramas).
+- El repo usa el **formato inmutable** del claim `sub` del token OIDC, que incluye los IDs
+  numéricos del dueño y del repo. La condición de confianza del rol exige exactamente:
+  `repo:belenpieroni@178622652/mitimitiCloud@1348973155:ref:refs/heads/main`.
+  Si el workflow falla con `Not authorized to perform sts:AssumeRoleWithWebIdentity`, comparar
+  con el `sub` real (CloudTrail, evento `AssumeRoleWithWebIdentity`) y con
+  `gh api repos/belenpieroni/mitimitiCloud/actions/oidc/customization/sub`. Los IDs están en
+  `githubOwnerId` y `githubRepoId` de `lib/config.ts`.
 - El rol solo puede subir imágenes a `mitimiti-backend` y redeployar el servicio `mitimiti-backend`.
 - El CD solo corre si el CI de ese commit pasó. Si la versión nueva no levanta, el circuit
   breaker de ECS vuelve a la anterior y el job queda en rojo.
