@@ -81,9 +81,17 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: infra/package-lock.json
+          cache-dependency-path: |
+            infra/package-lock.json
+            backend/package-lock.json
 
       - name: Instalar dependencias
+        run: npm ci
+
+      # cdk synth bundlea la Lambda de recordatorios con el código del backend
+      # (cronService, db.js): esbuild necesita pg, expo-server-sdk y pino de backend/node_modules.
+      - name: Instalar dependencias del backend
+        working-directory: backend
         run: npm ci
 
       - name: Chequeo de tipos

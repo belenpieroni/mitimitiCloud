@@ -27,8 +27,10 @@ export const config = {
   desiredCount: 2,
   /** Log group de los contenedores del backend. */
   backendLogGroupName: '/mitimiti/ecs/backend',
-  /** Cada cuántas horas EventBridge lanza el job de recordatorios (RemindersStack). */
+  /** Cada cuántas horas EventBridge invoca la Lambda de recordatorios (RemindersStack). */
   remindersEveryHours: 48,
+  /** Log group de la Lambda de recordatorios (RemindersStack). */
+  jobLogGroupName: '/mitimiti/job',
     /** Nombre del bucket de tickets: se combina con la cuenta para garantizar unicidad global. */
   ticketsBucketPrefix: 'mitimiti-tickets',
   /** Repo de GitHub que puede desplegar con OIDC (owner/repo). */

@@ -21,10 +21,12 @@ const poolConfig = {
   user: process.env.DB_USER || 'mitimiti',
   password: process.env.DB_PASSWORD || 'mitimiti_dev',
 
-  // max: 15 conexiones simultáneas por réplica Fargate.
+  // max: 15 conexiones simultáneas por réplica Fargate (valor por defecto).
   // Con 4 tareas en pico de autoscaling: 4 * 15 = 60 conexiones,
   // dentro del margen seguro del límite de ~110 de db.t4g.micro.
-  max: 15,
+  // DB_POOL_MAX permite bajarlo donde no hace falta tanto: la Lambda de
+  // recordatorios (RemindersStack) usa 2, porque recorre la base en serie.
+  max: parseInt(process.env.DB_POOL_MAX || '15', 10),
 
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 5000,

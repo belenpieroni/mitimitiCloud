@@ -13,7 +13,7 @@ Cada stack se despliega por separado y el estado queda en CloudFormation.
 | `EcsStack` | Cluster ECS Fargate, Task Definition y servicio del backend | TASK-08 |
 | `AlbStack` | ALB con health check en `/health` y CloudFront con HTTPS | TASK-09 |
 | `S3Stack` | Bucket S3 privado para tickets y comprobantes | TASK-16 |
-| `RemindersStack` | Regla de EventBridge que lanza el job de recordatorios cada 48 hs | TASK-21 |
+| `RemindersStack` | Lambda de recordatorios y regla de EventBridge que la invoca cada 48 hs | TASK-21, MT-32 |
 | `GithubOidcStack` | Proveedor OIDC de GitHub y rol de deploy para el CD | TASK-11 |
 
 ## Requisitos
@@ -329,42 +329,45 @@ Bucket privado para guardar las fotos de tickets y comprobantes sin pasar por el
 ## Recordatorios programados (RemindersStack)
 
 ```text
-EventBridge (cada 48 hs) ──▶ tarea efímera de Fargate (Task Definition del backend)
-   comando: node src/jobs/reminders.js ──▶ RDS + push ──▶ exit 0 ──▶ la tarea se apaga
+EventBridge (cada 48 hs) ──▶ Lambda mitimiti-reminders (VPC, subredes app)
+   lee mitimiti/db ──▶ ejecutarRecordatorios() ──▶ RDS + push de Expo (por el NAT) ──▶ termina
 ```
 
 - La regla `mitimiti-reminders` usa `Schedule.rate(Duration.hours(48))` (en la consola figura
   como `rate(2 days)`). El intervalo se cambia en `remindersEveryHours` de `lib/config.ts`.
-- La tarea usa la misma imagen, secretos, subredes `app` y security group que el servicio,
-  pero sobrescribe el comando: no levanta el servidor, hace una pasada y termina.
+- La Lambda (`lambda/reminders/index.ts`) bundlea con esbuild la misma lógica que el backend
+  (`backend/src/services/cronService.js` y `db.js`): no hay código duplicado. Por eso `cdk synth`
+  necesita `npm ci` también en `backend/` (el CI lo hace en el job `infra`).
+- **No depende de `EcsStack`**: solo usa la VPC, una regla de entrada en `sg-rds` (puerto 5432)
+  y el secreto `mitimiti/db`, que es el único que puede leer. No tiene acceso a `mitimiti/app`,
+  S3 ni Textract.
 - Corre **una sola vez** por disparo. Las réplicas del servicio reciben
-  `REMINDERS_CRON_ENABLED=false`, así que ya no corren el cron dentro de la API.
-- Si EventBridge no logra lanzar la tarea, reintenta 2 veces durante una hora.
-- El rol de EventBridge solo puede ejecutar esa Task Definition en `mitimiti-cluster`.
-- Los logs del job quedan en `/mitimiti/ecs/backend`, igual que los del servicio.
+  `REMINDERS_CRON_ENABLED=false`, así que no corren el cron dentro de la API.
+- Usa `DB_POOL_MAX=2` (las réplicas de ECS mantienen 15 conexiones cada una).
+- Las fechas ("vence en 3 días", el "hoy" de los avisos ya enviados) se calculan en
+  `America/Argentina/Buenos_Aires` de forma explícita, porque Lambda corre en UTC y `TZ` es una
+  variable reservada.
+- Si EventBridge no logra invocarla, reintenta 2 veces durante una hora. Si la invocación falla
+  (secreto o base no disponibles), Lambda la reintenta 2 veces más.
+- Los logs quedan en `/mitimiti/job`, con 30 días de retención.
+
+Después del merge, el stack se despliega directamente (solo necesita `VpcStack` y `RdsStack`):
 
 ```bash
-npx cdk deploy EcsStack RemindersStack
+npx cdk deploy RemindersStack
 ```
 
-Para probarlo sin esperar 48 hs, lanzar la tarea a mano con el mismo override de comando:
+Para probarlo sin esperar 48 hs, invocar la Lambda a mano:
 
 ```bash
-SUBNETS=$(aws ec2 describe-subnets --filters "Name=tag:aws-cdk:subnet-name,Values=app" \
-  --query "Subnets[].SubnetId" --output text | tr '\t' ',')
-SG=$(aws ec2 describe-security-groups --filters "Name=group-name,Values=mitimiti-ecs-sg" \
-  --query "SecurityGroups[0].GroupId" --output text)
+aws lambda invoke --function-name mitimiti-reminders out.json && cat out.json
+# {"ok":true,"durationMs":...}
 
-aws ecs run-task --cluster mitimiti-cluster --launch-type FARGATE --task-definition mitimiti-backend \
-  --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SG],assignPublicIp=DISABLED}" \
-  --overrides '{"containerOverrides":[{"name":"backend","command":["node","src/jobs/reminders.js"]}]}'
-
-aws logs tail /mitimiti/ecs/backend --since 10m --follow
+aws logs tail /mitimiti/job --since 10m
 # [reminders] Iniciando job de recordatorios ... [reminders] Job de recordatorios finalizado
 ```
 
-La tarea tiene que terminar con `exitCode: 0`
-(`aws ecs describe-tasks --cluster mitimiti-cluster --tasks <taskArn> --query "tasks[0].containers[0].exitCode"`).
+En local, el mismo job se corre con `npm run job:reminders` desde `backend/`.
 
 > En Windows, si `cdk synth` se queda sin memoria, se puede sintetizar sin el chequeo de tipos
 > (lo cubre `npm run build`): `npx cdk synth --app "npx ts-node --transpile-only --prefer-ts-exts bin/mitimiti.ts"`.
@@ -415,8 +418,8 @@ aws ecr describe-images --repository-name mitimiti-backend \
 `EcsStack` expone `cluster`, `taskDefinition`, `service`, `taskRole` y `logGroup`:
 
 - **S3 y Textract (TASK-04, 05, 16):** ya configurado en `bin/mitimiti.ts`: permisos `grantReadWrite` sobre el bucket de tickets, permiso `textract:AnalyzeExpense` en `compute.taskRole` y variable `AWS_BUCKET_NAME` inyectada en el contenedor.
-- **Recordatorios cada 48 hs (TASK-03 y TASK-21):** ya configurado en `RemindersStack`: EventBridge
-  lanza `node src/jobs/reminders.js` como tarea efímera con la misma `taskDefinition`, y el
+- **Recordatorios cada 48 hs (TASK-03, TASK-21 y MT-32):** ya configurado en `RemindersStack`:
+  EventBridge invoca la Lambda `mitimiti-reminders` (no usa la `taskDefinition`), y el
   servicio recibe `REMINDERS_CRON_ENABLED=false` para no duplicar avisos.
 - **Dashboard y alarmas (Persona 5):** usar `compute.service` (métricas de CPU y memoria),
   `edge.loadBalancer` y `edge.targetGroup` (5XX, latencia, `HealthyHostCount`) y el log
@@ -432,6 +435,8 @@ aws lambda invoke --function-name mitimiti-db-migration out.json && cat out.json
 npx cdk deploy EcrStack GithubOidcStack
 # Cargar AWS_DEPLOY_ROLE_ARN en GitHub y correr a mano el workflow de CD (sube la primera imagen)
 
-npx cdk deploy AlbStack EcsStack RemindersStack
+npx cdk deploy AlbStack EcsStack
 curl -i https://<ApiUrl>/health
+
+npx cdk deploy RemindersStack
 ```
