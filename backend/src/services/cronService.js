@@ -7,14 +7,34 @@ const DIAS_AVISO_PREVIO_2 = 1;
 const FRECUENCIA_MORA_SERVICIOS = 3;
 const FRECUENCIA_MORA_GASTOS = 7;
 
-function getDiffDays(fechaStr) {
-  // new Date('YYYY-MM-DD') se interpreta como medianoche UTC: en Argentina cae el día anterior.
-  // Armamos la fecha con sus partes para que quede en hora local.
+// Zona horaria de los usuarios. Los "días al vencimiento" y la fecha de "hoy" se calculan
+// en esta zona, no en la del proceso: en Lambda y en Fargate el proceso corre en UTC (y en
+// Lambda TZ es una variable reservada), así que entre las 21 y las 24 hs de Argentina
+// "hoy" ya sería mañana y el aviso de "vence en 3 días" se correría un día.
+const ZONA_HORARIA = 'America/Argentina/Buenos_Aires';
+
+// en-CA formatea como YYYY-MM-DD.
+const formatoFecha = new Intl.DateTimeFormat('en-CA', {
+  timeZone: ZONA_HORARIA,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+/** Fecha de hoy en Argentina, en formato YYYY-MM-DD (independiente de la TZ del proceso). */
+function fechaHoy(ahora = new Date()) {
+  return formatoFecha.format(ahora);
+}
+
+/** Pasa 'YYYY-MM-DD' (o un timestamp que empiece así) a días desde la época, sin TZ. */
+function diaUTC(fechaStr) {
   const [anio, mes, dia] = String(fechaStr).slice(0, 10).split('-').map(Number);
-  const today = new Date();
-  const targetMidnight = new Date(anio, mes - 1, dia);
-  const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  return Math.round((targetMidnight - todayMidnight) / (1000 * 60 * 60 * 24));
+  return Date.UTC(anio, mes - 1, dia) / (1000 * 60 * 60 * 24);
+}
+
+/** Días entre hoy (en Argentina) y la fecha dada: positivo si es futura, negativo si ya pasó. */
+function getDiffDays(fechaStr, ahora = new Date()) {
+  return diaUTC(fechaStr) - diaUTC(fechaHoy(ahora));
 }
 
 
@@ -40,7 +60,7 @@ function calcularProximaFecha(fechaStr, periodicidad) {
 async function resetServiciosVariables() {
   console.log('[cron] Verificando servicios variables para reset...');
   try {
-    const hoyStr = new Date().toISOString().split('T')[0];
+    const hoyStr = fechaHoy();
 
     const { rows: servicios } = await pool.query(
       `SELECT id::text, nombre, periodicidad, proximo_vencimiento::text AS "proximoVencimiento",
@@ -100,7 +120,7 @@ async function checkProximosVencimientos() {
        WHERE s.status != 'PAGADO'`
     );
 
-    const hoyStr = new Date().toISOString().split('T')[0];
+    const hoyStr = fechaHoy();
 
     for (const s of servicios) {
       const diff = getDiffDays(s.proximoVencimiento);
@@ -174,7 +194,7 @@ async function checkGastosPendientes() {
        WHERE g.status != 'PAGADO'`
     );
 
-    const hoyStr = new Date().toISOString().split('T')[0];
+    const hoyStr = fechaHoy();
 
     for (const g of gastos) {
       const diff = Math.abs(getDiffDays(g.fecha));
@@ -247,7 +267,7 @@ async function ejecutarRecordatorios() {
 }
 
 function iniciarCronJobs() {
-  cron.schedule('0 9 * * *', ejecutarRecordatorios, { timezone: 'America/Argentina/Buenos_Aires' });
+  cron.schedule('0 9 * * *', ejecutarRecordatorios, { timezone: ZONA_HORARIA });
   console.log('[cron] Cron de vencimientos, servicios variables y cobranza social iniciado.');
 }
 
@@ -256,6 +276,8 @@ module.exports = {
   ejecutarRecordatorios,
   resetServiciosVariables,
   calcularProximaFecha,
+  fechaHoy,
+  getDiffDays,
   checkProximosVencimientos,
   checkGastosPendientes,
 };

@@ -75,11 +75,12 @@ compute.taskRole.addToPrincipalPolicy(
 // Pasamos el nombre del bucket como variable de entorno al contenedor de ECS
 compute.container.addEnvironment('AWS_BUCKET_NAME', storage.bucket.bucketName);
 
+// No depende de EcsStack: la Lambda solo necesita la VPC, llegar a RDS y el secreto mitimiti/db.
 new RemindersStack(app, 'RemindersStack', {
   env,
-  cluster: compute.cluster,
-  taskDefinition: compute.taskDefinition,
-  ecsSecurityGroup: network.ecsSecurityGroup,
+  vpc: network.vpc,
+  rdsSecurityGroup: network.rdsSecurityGroup,
+  dbSecret: database.dbSecret,
 });
 
 new GithubOidcStack(app, 'GithubOidcStack', {

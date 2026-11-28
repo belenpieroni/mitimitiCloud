@@ -3,16 +3,14 @@ const { spawnSync } = require('child_process');
 const { randomUUID } = require('crypto');
 const { pool } = require('../../src/db');
 const { main } = require('../../src/jobs/reminders');
+const { fechaHoy, getDiffDays } = require('../../src/services/cronService');
 
 const SCRIPT = path.join(__dirname, '../../src/jobs/reminders.js');
 
-// Fecha local en formato YYYY-MM-DD dentro de `dias` días (el cron compara contra la fecha local).
+// Fecha en Argentina (YYYY-MM-DD) dentro de `dias` días: el job compara contra la fecha de
+// Argentina, no contra la del proceso (en CI el runner corre en UTC).
 function fechaEnDias(dias) {
-  const d = new Date();
-  d.setDate(d.getDate() + dias);
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  return `${d.getFullYear()}-${mm}-${dd}`;
+  return fechaHoy(new Date(Date.now() + dias * 24 * 60 * 60 * 1000));
 }
 
 function correrScript(envExtra = {}) {
@@ -82,5 +80,25 @@ describe('Job de recordatorios (src/jobs/reminders.js)', () => {
     const resultado = correrScript({ DB_HOST: '127.0.0.1', DB_PORT: '1' });
 
     expect(resultado.status).toBe(1);
+  });
+});
+
+describe('Fechas de los recordatorios (zona horaria de Argentina)', () => {
+  // 28/11 a las 23:30 en Argentina = 29/11 02:30 UTC: en un proceso en UTC (Lambda, Fargate)
+  // "hoy" ya sería 29/11 si se usara la fecha local del proceso.
+  const nocheEnArgentina = new Date('2026-11-29T02:30:00Z');
+
+  it('toma la fecha de hoy en Argentina, no la del proceso', () => {
+    expect(fechaHoy(nocheEnArgentina)).toBe('2026-11-28');
+  });
+
+  it('calcula "vence en 3 días" con la fecha de Argentina', () => {
+    expect(getDiffDays('2026-12-01', nocheEnArgentina)).toBe(3);
+    expect(getDiffDays('2026-11-28', nocheEnArgentina)).toBe(0);
+    expect(getDiffDays('2026-11-25', nocheEnArgentina)).toBe(-3);
+  });
+
+  it('acepta un timestamp que empieza con la fecha', () => {
+    expect(getDiffDays('2026-12-01T00:00:00.000Z', nocheEnArgentina)).toBe(3);
   });
 });
