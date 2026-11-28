@@ -35,6 +35,13 @@ export const config = {
   ticketsBucketPrefix: 'mitimiti-tickets',
   /** Repo de GitHub que puede desplegar con OIDC (owner/repo). */
   githubRepo: 'belenpieroni/mitimitiCloud',
+  /**
+   * IDs numéricos del dueño y del repo en GitHub. El repo usa el formato inmutable del claim
+   * "sub" del token OIDC (repo:<owner>@<ownerId>/<repo>@<repoId>:...), que incluye estos IDs.
+   * Se consultan con: gh api repos/belenpieroni/mitimitiCloud/actions/oidc/customization/sub
+   */
+  githubOwnerId: '178622652',
+  githubRepoId: '1348973155',
   /** Única rama que puede desplegar. */
   githubDeployBranch: 'main',
 };
