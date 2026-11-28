@@ -10,6 +10,7 @@ const deudasRoutes = require('./routes/deudas');
 const viviendaRouter = require('./routes/vivienda');
 const uploadsRouter = require('./routes/uploads');
 const authRouter = require('./routes/auth');
+const debugRouter = require('./routes/debug');
 
 const { errorHandler, notFound } = require('./middleware/errorHandler');
 const { logger, requestLogger } = require('./middleware/logger');
@@ -38,6 +39,8 @@ app.use('/api/deudas', deudasRoutes);
 app.use('/api/vivienda', viviendaRouter);
 app.use('/api/uploads', uploadsRouter);
 app.use('/api/auth', authRouter);
+// Falla controlada para la demo de observabilidad. Desactivada si no hay DEBUG_ERROR_TOKEN.
+app.use('/api/debug', debugRouter);
 
 app.use(notFound);
 app.use(errorHandler);

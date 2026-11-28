@@ -17,6 +17,8 @@ export interface EcsStackProps extends cdk.StackProps {
   appSecret: secretsmanager.ISecret;
   /** mitimiti/db: username, password, host, port, dbname (lo genera RDS). */
   dbSecret: secretsmanager.ISecret;
+  /** mitimiti/debug: DEBUG_ERROR_TOKEN del endpoint de error 500 de la demo. */
+  debugSecret: secretsmanager.ISecret;
   /** Target group del ALB (AlbStack). Si se pasa, el servicio se registra en él. */
   targetGroup?: elbv2.IApplicationTargetGroup;
 }
@@ -97,6 +99,7 @@ export class EcsStack extends cdk.Stack {
         DB_NAME: ecs.Secret.fromSecretsManager(props.dbSecret, 'dbname'),
         DB_USER: ecs.Secret.fromSecretsManager(props.dbSecret, 'username'),
         DB_PASSWORD: ecs.Secret.fromSecretsManager(props.dbSecret, 'password'),
+        DEBUG_ERROR_TOKEN: ecs.Secret.fromSecretsManager(props.debugSecret, 'DEBUG_ERROR_TOKEN'),
       },
       // Tiempo para que el backend cierre conexiones al recibir SIGTERM en un deploy.
       stopTimeout: cdk.Duration.seconds(30),

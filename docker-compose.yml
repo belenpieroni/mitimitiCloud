@@ -27,6 +27,7 @@ services:
     environment:
       NODE_ENV: development
       JWT_SECRET: ${JWT_SECRET:-mitimiti_seguro_2026}
+      DEBUG_ERROR_TOKEN: ${DEBUG_ERROR_TOKEN:-}
       OCR_SPACE_API_KEY: ${OCR_SPACE_API_KEY:-}
       FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-}
       FIREBASE_CLIENT_EMAIL: ${FIREBASE_CLIENT_EMAIL:-}
